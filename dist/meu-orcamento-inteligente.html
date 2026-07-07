@@ -1,0 +1,3448 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#FAF8F2">
+  <title>Meu Orçamento Inteligente</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+  <style>
+/* Meu Orçamento Inteligente — identidade visual clean em tons pastéis. */
+:root {
+  --off-white: #FAF8F2;
+  --bege: #EDE3D4;
+  --cinza-gelo: #EEF1F4;
+  --menta: #BFE8D5;
+  --lilas: #D9CCF2;
+  --ceu: #C9E7F6;
+  --rosa: #F4D6DA;
+  --ink: #2F3437;
+  --ink-2: #6B7280;
+  --alerta: #F6C667;
+  --erro: #E57373;
+  --sucesso: #7BC99A;
+  --surface: #FFFFFF;
+  --border: #E7E2D6;
+  --shadow: 0 1px 3px rgba(47, 52, 55, .06), 0 4px 14px rgba(47, 52, 55, .05);
+  --radius: 14px;
+  --sidebar-w: 232px;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+  background: var(--off-white);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.45;
+}
+h1, h2, h3 { margin: 0; font-weight: 600; }
+button { font: inherit; cursor: pointer; }
+input, select, textarea { font: inherit; color: var(--ink); }
+
+/* ---- Layout ---- */
+.app { display: flex; min-height: 100vh; }
+.sidebar {
+  width: var(--sidebar-w); background: var(--surface); border-right: 1px solid var(--border);
+  padding: 20px 12px; position: fixed; top: 0; bottom: 0; overflow-y: auto; z-index: 20;
+}
+.logo { font-size: 17px; font-weight: 700; padding: 4px 12px 18px; letter-spacing: -.2px; }
+.logo small { display: block; font-size: 11px; font-weight: 500; color: var(--ink-2); }
+.nav-link {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px;
+  color: var(--ink-2); text-decoration: none; font-size: 14px; margin-bottom: 2px;
+}
+.nav-link:hover { background: var(--cinza-gelo); color: var(--ink); }
+.nav-link.active { background: var(--menta); color: var(--ink); font-weight: 600; }
+.nav-icon { width: 20px; text-align: center; }
+
+.main { flex: 1; margin-left: var(--sidebar-w); padding: 20px 24px 90px; max-width: 1200px; }
+
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.topbar h1 { font-size: 21px; }
+
+.month-picker {
+  display: flex; align-items: center; gap: 4px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 999px; padding: 4px 6px; box-shadow: var(--shadow);
+}
+.month-picker .month-label { min-width: 140px; text-align: center; font-weight: 600; font-size: 14px; text-transform: capitalize; }
+.month-picker button { border: none; background: none; border-radius: 999px; width: 28px; height: 28px; color: var(--ink-2); }
+.month-picker button:hover { background: var(--cinza-gelo); }
+
+/* ---- Cards ---- */
+.card {
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 18px; margin-bottom: 16px; border: 1px solid rgba(231, 226, 214, .6);
+}
+.card-title { font-size: 15px; margin-bottom: 12px; color: var(--ink); }
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.card-head .card-title { margin-bottom: 0; }
+
+.grid { display: grid; gap: 12px; }
+.grid-cards { grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); margin-bottom: 16px; }
+.grid-2 { grid-template-columns: 1fr 1fr; }
+@media (max-width: 860px) { .grid-2 { grid-template-columns: 1fr; } }
+
+.stat-card {
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 14px 16px; border: 1px solid rgba(231, 226, 214, .6);
+}
+.stat-card.clickable { cursor: pointer; }
+.stat-card.clickable:hover { border-color: var(--menta); }
+.stat-label { font-size: 12px; color: var(--ink-2); margin-bottom: 4px; }
+.stat-value { font-size: 19px; font-weight: 700; letter-spacing: -.3px; }
+.stat-sub { font-size: 12px; color: var(--ink-2); margin-top: 3px; }
+.stat-card.tone-ok { background: linear-gradient(180deg, #f2fbf6, var(--surface)); }
+.stat-card.tone-ok .stat-value { color: #2E7D53; }
+.stat-card.tone-bad .stat-value { color: var(--erro); }
+.stat-card.tone-warn .stat-value { color: #B8862F; }
+.stat-card.tone-accent { background: linear-gradient(180deg, #f4f0fc, var(--surface)); }
+
+/* ---- Alertas ---- */
+.alerts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.alert { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: 12px; font-size: 14px; }
+.alert-erro { background: #FDECEC; border: 1px solid #F3C1C1; }
+.alert-aviso { background: #FCF3DD; border: 1px solid #F0DCAE; }
+.alert-info { background: var(--cinza-gelo); border: 1px solid #DDE3E9; }
+
+/* ---- Tabelas ---- */
+.table-scroll { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.table th {
+  text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--ink-2); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.table td { padding: 9px 10px; border-bottom: 1px solid #F1EEE5; vertical-align: middle; }
+.table tr:last-child td { border-bottom: none; }
+.table tr:hover td { background: #FBFAF6; }
+.table .right { text-align: right; }
+.table tfoot td, .table .total-row td { font-weight: 700; border-top: 2px solid var(--border); }
+
+/* ---- Badges ---- */
+.badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.badge-ok { background: #E3F5EB; color: #2E7D53; }
+.badge-bad { background: #FDECEC; color: #C0504D; }
+.badge-warn { background: #FCF3DD; color: #9A7220; }
+.badge-info { background: var(--ceu); color: #2C6284; }
+.badge-muted { background: var(--cinza-gelo); color: var(--ink-2); }
+
+/* ---- Botões ---- */
+.btn {
+  border: none; border-radius: 10px; padding: 8px 16px; font-size: 14px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.btn-primary { background: var(--menta); color: var(--ink); }
+.btn-primary:hover { background: #ADDFC6; }
+.btn-secondary { background: var(--lilas); color: var(--ink); }
+.btn-secondary:hover { background: #CBBAEC; }
+.btn-ghost { background: transparent; color: var(--ink-2); border: 1px solid var(--border); }
+.btn-ghost:hover { background: var(--cinza-gelo); }
+.btn-danger { background: #F8DCDC; color: #B44B48; }
+.btn-sm { padding: 5px 11px; font-size: 13px; border-radius: 8px; }
+.icon-btn {
+  border: none; background: transparent; border-radius: 8px; padding: 4px 7px;
+  color: var(--ink-2); font-size: 14px;
+}
+.icon-btn:hover { background: var(--cinza-gelo); color: var(--ink); }
+.row-actions { display: flex; gap: 2px; justify-content: flex-end; }
+
+.fab {
+  position: fixed; right: 22px; bottom: 84px; z-index: 30;
+  width: 54px; height: 54px; border-radius: 50%; border: none;
+  background: var(--menta); color: var(--ink); font-size: 26px; box-shadow: 0 4px 16px rgba(47, 52, 55, .18);
+}
+@media (min-width: 861px) { .fab { bottom: 26px; } }
+
+/* ---- Formulários ---- */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+@media (max-width: 560px) { .form-grid { grid-template-columns: 1fr; } }
+.form-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.form-full { grid-column: 1 / -1; }
+.form-label { color: var(--ink-2); font-weight: 600; font-size: 12px; }
+.form-field input:not([type=checkbox]), .form-field select, .form-field textarea {
+  border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: var(--off-white);
+  outline: none; width: 100%;
+}
+.form-field input:focus, .form-field select:focus, .form-field textarea:focus { border-color: var(--menta); background: var(--surface); }
+.form-check { flex-direction: row; align-items: center; gap: 8px; padding-top: 18px; font-size: 14px; }
+.form-check input { width: 17px; height: 17px; accent-color: #2E9E63; }
+.form-help { color: var(--ink-2); }
+.form-error { color: var(--erro); font-size: 13px; margin-top: 10px; }
+
+/* ---- Modal ---- */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(47, 52, 55, .35); z-index: 50;
+  display: flex; align-items: flex-start; justify-content: center; padding: 30px 14px; overflow-y: auto;
+}
+.modal {
+  background: var(--surface); border-radius: 16px; box-shadow: 0 12px 40px rgba(0, 0, 0, .18);
+  width: 100%; max-width: 560px; animation: pop .15s ease-out;
+}
+.modal-wide { max-width: 860px; }
+@keyframes pop { from { transform: scale(.97); opacity: 0; } }
+.modal-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px 0; }
+.modal-head h3 { font-size: 16px; }
+.modal-body { padding: 16px 20px 20px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+/* ---- Gráficos ---- */
+.chart-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.chart-scroll { overflow-x: auto; width: 100%; }
+.chart { max-width: 100%; height: auto; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; justify-content: center; font-size: 12px; color: var(--ink-2); }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.chart-tip {
+  position: fixed; z-index: 100; background: var(--ink); color: #fff; font-size: 12px;
+  padding: 6px 10px; border-radius: 8px; pointer-events: none; line-height: 1.5;
+}
+.chart-empty, .empty-state { color: var(--ink-2); font-size: 14px; padding: 22px 10px; text-align: center; }
+
+/* ---- Calendário ---- */
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-dow { font-size: 11px; text-transform: uppercase; color: var(--ink-2); text-align: center; padding: 4px 0; font-weight: 600; }
+.cal-day {
+  min-height: 74px; background: var(--surface); border: 1px solid #F0EDE4; border-radius: 10px;
+  padding: 5px 6px; font-size: 11.5px; cursor: pointer; overflow: hidden;
+}
+.cal-day:hover { border-color: var(--menta); }
+.cal-day.other { background: transparent; border-color: transparent; cursor: default; }
+.cal-day.today { border-color: #2E9E63; border-width: 2px; }
+.cal-num { font-weight: 600; color: var(--ink-2); margin-bottom: 3px; }
+.cal-item {
+  display: flex; align-items: center; gap: 4px; border-radius: 6px; padding: 1px 5px; margin-bottom: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 10.5px;
+}
+.cal-more { color: var(--ink-2); font-size: 10.5px; }
+
+/* ---- Toast ---- */
+.toast {
+  position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%) translateY(12px);
+  background: var(--ink); color: #fff; padding: 10px 20px; border-radius: 999px; font-size: 14px;
+  opacity: 0; transition: all .25s; z-index: 90; box-shadow: 0 6px 20px rgba(0, 0, 0, .2); max-width: 90vw;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ---- Barra de comprometimento ---- */
+.commit-meter { height: 12px; border-radius: 999px; background: var(--cinza-gelo); overflow: hidden; margin: 8px 0 4px; }
+.commit-meter > div { height: 100%; border-radius: 999px; transition: width .3s; }
+
+/* ---- Filtros ---- */
+.filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+.filters select, .filters input {
+  border: 1px solid var(--border); border-radius: 10px; padding: 6px 10px; background: var(--surface); font-size: 13px;
+}
+
+/* ---- Checklist de fechamento ---- */
+.check-item { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid #F1EEE5; font-size: 14px; }
+.check-item:last-child { border-bottom: none; }
+.check-mark { font-size: 16px; line-height: 1.3; }
+
+/* ---- Onboarding ---- */
+.onboard-step { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #F1EEE5; }
+.onboard-step:last-child { border-bottom: none; }
+.onboard-num {
+  width: 26px; height: 26px; border-radius: 50%; background: var(--lilas); color: var(--ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0;
+}
+
+/* ---- Mobile: menu inferior ---- */
+.bottom-nav {
+  display: none; position: fixed; bottom: 0; left: 0; right: 0; z-index: 40;
+  background: var(--surface); border-top: 1px solid var(--border);
+  padding: 4px 2px calc(4px + env(safe-area-inset-bottom)); overflow-x: auto;
+}
+.bottom-nav a {
+  flex: 1; min-width: 62px; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font-size: 10px; color: var(--ink-2); text-decoration: none; padding: 5px 2px; border-radius: 10px;
+}
+.bottom-nav a.active { color: var(--ink); background: var(--menta); font-weight: 600; }
+.bottom-nav .nav-icon { font-size: 18px; }
+
+@media (max-width: 860px) {
+  .sidebar { display: none; }
+  .main { margin-left: 0; padding: 14px 12px 100px; }
+  .bottom-nav { display: flex; }
+  .topbar h1 { font-size: 18px; }
+  .grid-cards { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .stat-value { font-size: 16px; }
+}
+
+@media print {
+  .sidebar, .bottom-nav, .fab, .topbar .month-picker { display: none; }
+  .main { margin: 0; }
+}
+
+</style>
+</head>
+<body>
+  <div id="app" class="app"></div>
+  <script>
+'use strict';
+const __m = {};
+__m['utils'] = (() => {
+// Utilitários gerais: formatação, datas, DOM.
+
+const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+
+function fmt(v) {
+  return BRL.format(Number(v) || 0);
+}
+
+function fmtPct(v) {
+  return `${(Number(v) || 0).toFixed(0)}%`;
+}
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function pad(n) {
+  return String(n).padStart(2, '0');
+}
+
+// ---- Meses no formato 'YYYY-MM' ----
+function ymNow() {
+  return todayISO().slice(0, 7);
+}
+
+function ymOf(dateStr) {
+  return (dateStr || '').slice(0, 7);
+}
+
+function ymAdd(ym, n) {
+  const [y, m] = ym.split('-').map(Number);
+  const total = y * 12 + (m - 1) + n;
+  return `${Math.floor(total / 12)}-${pad((total % 12) + 1)}`;
+}
+
+function ymDiff(a, b) {
+  const [ya, ma] = a.split('-').map(Number);
+  const [yb, mb] = b.split('-').map(Number);
+  return (ya * 12 + ma) - (yb * 12 + mb);
+}
+
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+  'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const MESES_CURTO = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+function ymLabel(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return `${MESES[m - 1]} de ${y}`;
+}
+
+function ymShort(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return `${MESES_CURTO[m - 1]}/${String(y).slice(2)}`;
+}
+
+function daysInMonth(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(y, m, 0).getDate();
+}
+
+// Data 'YYYY-MM-DD' dentro do mês ym, respeitando meses curtos (dia 31 → 30/28).
+function dateInMonth(ym, day) {
+  return `${ym}-${pad(Math.min(day || 1, daysInMonth(ym)))}`;
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function daysUntil(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const target = new Date(y, m - 1, d);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((target - today) / 86400000);
+}
+
+// ---- DOM ----
+function h(tag, attrs = {}, ...children) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === 'class') el.className = v;
+    else if (k === 'html') el.innerHTML = v;
+    else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v);
+    else if (v !== undefined && v !== null && v !== false) el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of children.flat(Infinity)) {
+    if (c === null || c === undefined || c === false) continue;
+    el.append(c.nodeType ? c : document.createTextNode(String(c)));
+  }
+  return el;
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// ---- CSV ----
+function toCSV(rows, headers) {
+  const escape = v => {
+    const s = String(v ?? '');
+    return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [headers.map(escape).join(';')];
+  for (const r of rows) lines.push(headers.map(hd => escape(r[hd])).join(';'));
+  return lines.join('\n');
+}
+
+function downloadFile(name, content, type = 'text/csv;charset=utf-8') {
+  const blob = new Blob(['﻿' + content], { type });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// Aceita ; , ou tab como separador; primeira linha = cabeçalho.
+function parseTable(text) {
+  const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim());
+  if (!lines.length) return { headers: [], rows: [] };
+  const sep = lines[0].includes('\t') ? '\t' : (lines[0].includes(';') ? ';' : ',');
+  const split = line => {
+    const out = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { inQ = !inQ; continue; }
+      if (ch === sep && !inQ) { out.push(cur); cur = ''; } else cur += ch;
+    }
+    out.push(cur);
+    return out.map(s => s.trim());
+  };
+  const headers = split(lines[0]).map(s => s.toLowerCase());
+  const rows = lines.slice(1).map(l => {
+    const cells = split(l);
+    const obj = {};
+    headers.forEach((hd, i) => { obj[hd] = cells[i] ?? ''; });
+    return obj;
+  });
+  return { headers, rows };
+}
+
+// Converte "1.234,56", "R$ 200" ou "200.5" em número.
+function parseMoney(s) {
+  if (typeof s === 'number') return s;
+  let t = String(s || '').replace(/[R$\s]/g, '');
+  if (/,\d{1,2}$/.test(t)) t = t.replace(/\./g, '').replace(',', '.');
+  else t = t.replace(/,/g, '');
+  return parseFloat(t) || 0;
+}
+
+// Converte "08/2026", "ago/2026" ou "2026-08" em 'YYYY-MM'.
+function parseYm(s) {
+  const t = String(s || '').trim().toLowerCase();
+  if (/^\d{4}-\d{2}/.test(t)) return t.slice(0, 7);
+  let m = t.match(/^(\d{1,2})\/(\d{4})$/);
+  if (m) return `${m[2]}-${pad(+m[1])}`;
+  m = t.match(/^([a-zç]{3})[a-zç]*[\/\-\s](\d{2,4})$/);
+  if (m) {
+    const idx = MESES_CURTO.indexOf(m[1].slice(0, 3));
+    if (idx >= 0) return `${m[2].length === 2 ? '20' + m[2] : m[2]}-${pad(idx + 1)}`;
+  }
+  return '';
+}
+
+function sum(arr, fn = x => x) {
+  return arr.reduce((acc, x) => acc + (Number(fn(x)) || 0), 0);
+}
+
+return { BRL, fmt, fmtPct, uid, todayISO, pad, ymNow, ymOf, ymAdd, ymDiff, ymLabel, ymShort, daysInMonth, dateInMonth, fmtDate, daysUntil, h, esc, toCSV, downloadFile, parseTable, parseMoney, parseYm, sum };
+})();
+
+__m['store'] = (() => {
+// Persistência em localStorage e catálogo de valores padrão.
+const { uid, ymNow } = __m['utils'];
+
+const KEY = 'meu-orcamento-inteligente:v1';
+
+const CATEGORIAS_DESPESA = [
+  'Moradia', 'Condomínio', 'Luz', 'Gás', 'Internet, TV e celular', 'Mercado',
+  'Alimentação fora de casa', 'Transporte', 'Combustível', 'Carro', 'Saúde',
+  'Educação', 'Lazer', 'Viagem', 'Casa', 'Presentes', 'Beleza e cuidados pessoais',
+  'Assinaturas', 'Tarifas e juros', 'Impostos', 'Dívidas', 'Outros',
+];
+
+const CATEGORIAS_RECEITA = [
+  'Salário fixo', 'Renda variável', 'Aula ou docência', 'Projeto pontual',
+  'Reembolso', 'Restituição', 'Rendimento de investimento', 'Outros',
+];
+
+const TIPOS_RECEITA = [
+  ['segura', 'Receita segura'], ['variavel', 'Receita variável'],
+  ['extraordinaria', 'Receita extraordinária'], ['reembolso', 'Reembolso'],
+];
+
+const STATUS_RECEITA = [
+  ['prevista', 'Prevista'], ['recebida', 'Recebida'], ['atrasada', 'Atrasada'], ['cancelada', 'Cancelada'],
+];
+
+const CLASSIFICACAO_DESPESA = [
+  'Essencial', 'Compromisso financeiro', 'Construção de futuro',
+  'Qualidade de vida', 'Vazamento', 'Reembolsável', 'Extraordinária',
+];
+
+const STATUS_DESPESA = [
+  ['previsto', 'Previsto'], ['pago', 'Pago'], ['vencido', 'Vencido'],
+  ['cancelado', 'Cancelado'], ['parcial', 'Parcialmente pago'], ['reembolsado', 'Reembolsado'],
+];
+
+const STATUS_REEMBOLSO = [
+  ['pendente', 'Pendente'], ['solicitado', 'Solicitado'], ['parcial', 'Parcialmente pago'],
+  ['pago', 'Pago'], ['cancelado', 'Cancelado'], ['contestado', 'Contestado'], ['atrasado', 'Atrasado'],
+];
+
+const FORMAS_PAGAMENTO = ['Pix', 'Débito', 'Cartão de crédito', 'Boleto', 'Dinheiro', 'Transferência', 'Débito automático'];
+
+const PERIODICIDADES = [
+  ['mensal', 'Mensal', 1], ['bimestral', 'Bimestral', 2], ['trimestral', 'Trimestral', 3],
+  ['semestral', 'Semestral', 6], ['anual', 'Anual', 12],
+];
+
+const TIPOS_INVESTIMENTO = [
+  'Reserva de emergência', 'CDB', 'Previdência privada', 'Fundo multimercado',
+  'FII', 'Tesouro Direto', 'Ações', 'Outros',
+];
+
+const OBJETIVOS_INVESTIMENTO = [
+  'Reserva de emergência', 'Aposentadoria', 'Renda passiva',
+  'Objetivo de curto prazo', 'Objetivo de médio prazo', 'Objetivo de longo prazo',
+];
+
+const CRITERIOS_DIVISAO = [
+  ['fixo', 'Valor fixo'], ['percentual', 'Percentual'], ['igual', 'Divisão igual'],
+  ['integral', 'Reembolso integral'], ['personalizado', 'Personalizado'],
+];
+
+const CATEGORIAS_CARRO = ['Carro', 'Combustível', 'Transporte'];
+
+function defaults() {
+  return {
+    version: 1,
+    settings: {
+      nome: '',
+      rendaSegura: 0,
+      metaReservaMin: 35000,
+      metaReservaMax: 40000,
+      limiteComprometimento: 70,
+      aporteMinimoMensal: 0,
+      limiteLazer: 0,
+      limiteAlimentacaoFora: 0,
+      saldoMinimoSeguranca: 0,
+      limiteParcelamentosPct: 30, // % da renda segura que os parcelamentos podem ocupar
+      onboardingDone: false,
+    },
+    banks: ['XP', 'Santander', 'Banco do Brasil', 'C6'].map(nome => ({ id: uid(), nome })),
+    categoriesExpense: CATEGORIAS_DESPESA.map(nome => ({ id: uid(), nome, sub: [] })),
+    categoriesIncome: CATEGORIAS_RECEITA.map(nome => ({ id: uid(), nome })),
+    people: [],
+    cards: [],
+    incomes: [],
+    expenses: [],
+    purchases: [],
+    installments: [],
+    recurring: [],
+    recurringOcc: {},   // "recId:YYYY-MM" -> { status, valor, dataPagamento }
+    provisions: [],
+    provisionDeposits: [], // { id, provisaoId, mes, valor }
+    investments: [],
+    investContrib: [],  // { id, investimentoId, data, valor }
+    reimbursements: [],
+    rules: [
+      { id: uid(), contem: 'posto', acao: 'categoria', valor: 'Combustível' },
+      { id: uid(), contem: 'ifood', acao: 'categoria', valor: 'Alimentação fora de casa' },
+      { id: uid(), contem: 'uber', acao: 'categoria', valor: 'Transporte' },
+      { id: uid(), contem: 'farmácia', acao: 'categoria', valor: 'Saúde' },
+    ],
+  };
+}
+
+let db = load();
+
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) {
+      const data = JSON.parse(raw);
+      return Object.assign(defaults(), data, { settings: Object.assign(defaults().settings, data.settings) });
+    }
+  } catch (e) { console.error('Falha ao carregar dados', e); }
+  return defaults();
+}
+
+function save() {
+  localStorage.setItem(KEY, JSON.stringify(db));
+}
+
+function resetAll() {
+  db = defaults();
+  save();
+}
+
+// CRUD genérico por coleção
+function add(coll, obj) {
+  const item = { id: uid(), ...obj };
+  db[coll].push(item);
+  save();
+  return item;
+}
+
+function update(coll, id, patch) {
+  const item = db[coll].find(x => x.id === id);
+  if (item) { Object.assign(item, patch); save(); }
+  return item;
+}
+
+function remove(coll, id) {
+  db[coll] = db[coll].filter(x => x.id !== id);
+  save();
+}
+
+function get(coll, id) {
+  return db[coll].find(x => x.id === id);
+}
+
+// Estado de interface (mês selecionado), fora dos dados persistidos principais.
+const ui = {
+  month: ymNow(),
+  year: Number(ymNow().slice(0, 4)),
+};
+
+// Regras automáticas de categorização
+function applyRules(descricao) {
+  const out = {};
+  const desc = (descricao || '').toLowerCase();
+  for (const r of db.rules) {
+    if (r.contem && desc.includes(r.contem.toLowerCase())) {
+      if (r.acao === 'categoria') out.categoria = r.valor;
+      if (r.acao === 'pessoa') out.pessoaNome = r.valor;
+    }
+  }
+  return out;
+}
+
+return { CATEGORIAS_DESPESA, CATEGORIAS_RECEITA, TIPOS_RECEITA, STATUS_RECEITA, CLASSIFICACAO_DESPESA, STATUS_DESPESA, STATUS_REEMBOLSO, FORMAS_PAGAMENTO, PERIODICIDADES, TIPOS_INVESTIMENTO, OBJETIVOS_INVESTIMENTO, CRITERIOS_DIVISAO, CATEGORIAS_CARRO, db, save, resetAll, add, update, remove, get, ui, applyRules };
+})();
+
+__m['calc'] = (() => {
+// Cálculos financeiros: agregados mensais, projeções e alertas.
+const { db, PERIODICIDADES } = __m['store'];
+const { ymOf, ymAdd, ymDiff, ymNow, dateInMonth, daysUntil, sum, fmt, ymLabel } = __m['utils'];
+
+const ATIVAS = s => s !== 'cancelado' && s !== 'cancelada';
+
+// ---- Receitas ----
+// Receitas do mês: lançamentos com data no mês + projeção de receitas recorrentes
+// (uma receita marcada como recorrente repete-se mensalmente a partir do seu mês).
+function monthIncomes(ym) {
+  const direct = db.incomes.filter(i => ymOf(i.data) === ym && ATIVAS(i.status));
+  const projected = db.incomes
+    .filter(i => i.recorrente && ATIVAS(i.status) && ymDiff(ym, ymOf(i.data)) > 0)
+    .filter(i => !db.incomes.some(o => o.recorrenteDe === i.id && ymOf(o.data) === ym))
+    .map(i => ({
+      ...i,
+      id: `${i.id}@${ym}`,
+      recorrenteDe: i.id,
+      data: dateInMonth(ym, Number(i.data.slice(8, 10))),
+      status: 'prevista',
+      virtual: true,
+    }));
+  return [...direct, ...projected];
+}
+
+// ---- Despesas avulsas (não recorrentes, não parceladas) ----
+function monthExpenses(ym) {
+  return db.expenses.filter(e => ymOf(e.dataVencimento || e.dataCompra) === ym && ATIVAS(e.status));
+}
+
+function expenseNet(e) {
+  return (Number(e.valorTotal) || 0) - (e.reembolsavel ? (Number(e.valorReembolsavel) || 0) : 0);
+}
+
+// ---- Contas recorrentes ----
+function recurringOccurrences(ym) {
+  const out = [];
+  for (const rec of db.recurring) {
+    if (rec.status === 'pausada') continue;
+    const start = rec.dataInicio || ymNow();
+    if (ymDiff(ym, start) < 0) continue;
+    if (rec.dataFim && ymDiff(ym, rec.dataFim) > 0) continue;
+    const per = PERIODICIDADES.find(p => p[0] === rec.periodicidade)?.[2] || 1;
+    if (ymDiff(ym, start) % per !== 0) continue;
+    const key = `${rec.id}:${ym}`;
+    const occ = db.recurringOcc[key] || {};
+    if (occ.status === 'cancelado') continue;
+    const dataVenc = dateInMonth(ym, Number(rec.diaVencimento) || 1);
+    let status = occ.status || 'previsto';
+    if (status === 'previsto' && daysUntil(dataVenc) < 0) status = 'vencido';
+    out.push({
+      key, rec, ym,
+      nome: rec.nome,
+      categoria: rec.categoria,
+      valor: occ.valor !== undefined ? Number(occ.valor) : Number(rec.valorPrevisto) || 0,
+      valorPago: Number(occ.valorPago) || 0,
+      dataVencimento: dataVenc,
+      status,
+      dataPagamento: occ.dataPagamento || '',
+    });
+  }
+  return out.sort((a, b) => a.dataVencimento.localeCompare(b.dataVencimento));
+}
+
+// ---- Parcelamentos ----
+function monthInstallments(ym) {
+  return db.installments.filter(p => p.mes === ym && ATIVAS(p.status));
+}
+
+function futureInstallmentsTotal(fromYm) {
+  return sum(db.installments.filter(p => ymDiff(p.mes, fromYm) > 0 && ATIVAS(p.status)), p => p.valor);
+}
+
+// Fatura de um cartão no mês.
+function cardInvoice(cardId, ym) {
+  const parcelas = monthInstallments(ym).filter(p => p.cartaoId === cardId);
+  const novas = parcelas.filter(p => Number(p.numero) === Number(p.parcelaInicial ?? 1) &&
+    db.purchases.find(c => c.id === p.purchaseId)?.mesInicio === ym);
+  const herdadas = parcelas.filter(p => !novas.includes(p));
+  return {
+    parcelas,
+    total: sum(parcelas, p => p.valor),
+    pago: sum(parcelas.filter(p => p.status === 'pago'), p => p.valor),
+    novas: sum(novas, p => p.valor),
+    herdadas: sum(herdadas, p => p.valor),
+  };
+}
+
+// ---- Provisões ----
+// Valor mensal necessário para atingir o alvo até a data alvo.
+function provisionMonthly(prov, ym = ymNow()) {
+  if (prov.status !== 'ativa') return 0;
+  if (prov.dataAlvo && ymDiff(prov.dataAlvo, ym) < 0) return 0;
+  if (prov.valorMensal) return Number(prov.valorMensal);
+  const restante = Math.max(0, (Number(prov.valorAlvo) || 0) - (Number(prov.valorAcumulado) || 0));
+  const meses = prov.dataAlvo ? Math.max(1, ymDiff(prov.dataAlvo, ym) + 1) : 12;
+  return restante / meses;
+}
+
+function monthProvisions(ym) {
+  return sum(db.provisions, p => provisionMonthly(p, ym));
+}
+
+function monthProvisionDeposits(ym) {
+  return sum(db.provisionDeposits.filter(d => d.mes === ym), d => d.valor);
+}
+
+// ---- Investimentos ----
+function monthInvestPlanned() {
+  return sum(db.investments, i => i.aporteMensalPlanejado);
+}
+
+function monthInvestDone(ym) {
+  return sum(db.investContrib.filter(c => ymOf(c.data) === ym), c => c.valor);
+}
+
+function totalInvested() {
+  return sum(db.investments, i => i.valorAtual);
+}
+
+function reserveTotal() {
+  return sum(db.investments.filter(i => i.tipo === 'Reserva de emergência' || i.objetivo === 'Reserva de emergência'), i => i.valorAtual);
+}
+
+// ---- Reembolsos ----
+function reimbPending(r) {
+  return Math.max(0, (Number(r.valorAReembolsar) || 0) - (Number(r.valorRecebido) || 0));
+}
+
+function reimbOutstanding() {
+  return sum(db.reimbursements.filter(r => ['pendente', 'solicitado', 'parcial', 'atrasado'].includes(r.status)), reimbPending);
+}
+
+function monthReimbursements(ym) {
+  return db.reimbursements.filter(r => ymOf(r.data) === ym && ATIVAS(r.status));
+}
+
+// ---- Resumo mensal consolidado ----
+function monthSummary(ym) {
+  const incomes = monthIncomes(ym);
+  const receitaTotal = sum(incomes, i => i.valor);
+  const receitaSegura = sum(incomes.filter(i => i.tipo === 'segura'), i => i.valor);
+  const receitaVariavel = sum(incomes.filter(i => i.tipo === 'variavel'), i => i.valor);
+
+  const expenses = monthExpenses(ym);
+  const fixas = expenses.filter(e => e.natureza === 'fixa');
+  const variaveis = expenses.filter(e => e.natureza !== 'fixa');
+  const despFixasAvulsas = sum(fixas, expenseNet);
+  const despVariaveis = sum(variaveis, expenseNet);
+
+  const recs = recurringOccurrences(ym);
+  const recorrentes = sum(recs, o => o.valor);
+
+  const parcelas = monthInstallments(ym);
+  const parcelamentos = sum(parcelas, p => p.valor);
+
+  const provisoes = monthProvisions(ym);
+  const investimentos = monthInvestPlanned();
+  const investRealizado = monthInvestDone(ym);
+
+  const reembolsosMes = sum(monthReimbursements(ym), reimbPending);
+
+  const despesasFixas = despFixasAvulsas + recorrentes;
+  const despesasTotais = despesasFixas + despVariaveis + parcelamentos;
+
+  const compromissos = despesasFixas + parcelamentos + provisoes + investimentos + despVariaveis;
+  const saldoPrevisto = receitaTotal - despesasTotais - provisoes - investimentos;
+  const saldoLivreReal = receitaSegura - compromissos;
+  const comprometimento = receitaSegura > 0
+    ? ((despesasFixas + parcelamentos + provisoes + investimentos) / receitaSegura) * 100
+    : 0;
+
+  return {
+    ym, incomes, expenses, recs, parcelas,
+    receitaTotal, receitaSegura, receitaVariavel,
+    despesasTotais, despesasFixas, despVariaveis, despFixasAvulsas, recorrentes,
+    parcelamentos, provisoes, investimentos, investRealizado,
+    reembolsosMes, reembolsosAReceber: reimbOutstanding(),
+    saldoPrevisto, saldoLivreReal, comprometimento,
+  };
+}
+
+// Divisão do comprometimento da renda para o gráfico de barras empilhadas.
+function commitmentBreakdown(ym) {
+  const s = monthSummary(ym);
+  const dividas = sum(s.expenses.filter(e => e.categoria === 'Dívidas'), expenseNet) +
+    sum(s.recs.filter(o => o.categoria === 'Dívidas'), o => o.valor);
+  const fixas = Math.max(0, s.despesasFixas - dividas);
+  const livre = Math.max(0, s.receitaSegura - s.despesasFixas - s.parcelamentos - s.provisoes - s.investimentos);
+  return {
+    receitaSegura: s.receitaSegura,
+    partes: [
+      ['Despesas fixas', fixas],
+      ['Dívidas', dividas],
+      ['Parcelamentos', s.parcelamentos],
+      ['Provisões', s.provisoes],
+      ['Investimentos', s.investimentos],
+      ['Livre', livre],
+    ],
+  };
+}
+
+// Despesas por categoria (líquidas), incluindo recorrentes e parcelas.
+function expensesByCategory(ym) {
+  const map = {};
+  const addTo = (cat, v) => { map[cat || 'Sem categoria'] = (map[cat || 'Sem categoria'] || 0) + v; };
+  for (const e of monthExpenses(ym)) addTo(e.categoria, expenseNet(e));
+  for (const o of recurringOccurrences(ym)) addTo(o.categoria, o.valor);
+  for (const p of monthInstallments(ym)) {
+    const compra = db.purchases.find(c => c.id === p.purchaseId);
+    addTo(compra?.categoria, Number(p.valor) || 0);
+  }
+  return Object.entries(map).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+}
+
+// Linha anual: uma entrada por mês do ano.
+function annualRows(year) {
+  return Array.from({ length: 12 }, (_, i) => monthSummary(`${year}-${String(i + 1).padStart(2, '0')}`));
+}
+
+// ---- Alertas automáticos ----
+function alertsFor(ym) {
+  const s = monthSummary(ym);
+  const alerts = [];
+  const push = (level, msg) => alerts.push({ level, msg });
+
+  if (s.receitaSegura > 0) {
+    if (s.comprometimento > 85) push('erro', `Atenção: ${s.comprometimento.toFixed(0)}% da sua renda segura já está comprometida neste mês.`);
+    else if (s.comprometimento > 70) push('aviso', `${s.comprometimento.toFixed(0)}% da sua renda segura já está comprometida neste mês.`);
+  }
+  if (s.saldoLivreReal < 0) push('erro', `Seu saldo livre real está negativo em ${fmt(Math.abs(s.saldoLivreReal))} em ${ymLabel(ym)}.`);
+
+  const vencidas = [
+    ...s.expenses.filter(e => e.status === 'vencido' || (e.status === 'previsto' && e.dataVencimento && daysUntil(e.dataVencimento) < 0)),
+    ...s.recs.filter(o => o.status === 'vencido'),
+  ];
+  if (vencidas.length) push('erro', `Você tem ${vencidas.length} conta${vencidas.length > 1 ? 's' : ''} vencida${vencidas.length > 1 ? 's' : ''} sem pagamento registrado.`);
+
+  const vencendo = [...s.expenses.filter(e => e.status === 'previsto' && e.dataVencimento), ...s.recs.filter(o => o.status === 'previsto')]
+    .filter(x => { const d = daysUntil(x.dataVencimento); return d >= 0 && d <= 3; });
+  if (vencendo.length) push('aviso', `${vencendo.length} conta${vencendo.length > 1 ? 's vencem' : ' vence'} nos próximos 3 dias.`);
+
+  const semCategoria = s.expenses.filter(e => !e.categoria).length;
+  if (semCategoria) push('aviso', `Você ainda tem ${semCategoria} despesa${semCategoria > 1 ? 's' : ''} sem categoria.`);
+
+  // Faturas de cartão
+  for (const card of db.cards) {
+    const inv = cardInvoice(card.id, ym);
+    if (card.limitePlanejado > 0 && inv.total > card.limitePlanejado) {
+      push('aviso', `A fatura do cartão ${card.nome} (${fmt(inv.total)}) ultrapassou o limite planejado de ${fmt(card.limitePlanejado)}.`);
+    } else if (card.limitePlanejado > 0 && inv.total > card.limitePlanejado * 0.8) {
+      push('info', `A fatura do cartão ${card.nome} já atingiu ${Math.round(inv.total / card.limitePlanejado * 100)}% do limite planejado para este mês.`);
+    }
+  }
+
+  // Parcelamentos futuros acima do limite definido
+  const limPct = Number(db.settings.limiteParcelamentosPct) || 0;
+  if (limPct > 0 && s.receitaSegura > 0) {
+    for (let i = 1; i <= 6; i++) {
+      const m = ymAdd(ym, i);
+      const val = sum(monthInstallments(m), p => p.valor);
+      if (val > s.receitaSegura * limPct / 100) {
+        push('aviso', `Em ${ymLabel(m)}, os parcelamentos (${fmt(val)}) ultrapassam ${limPct}% da renda segura atual.`);
+        break;
+      }
+    }
+  }
+
+  // Reserva abaixo da meta
+  const reserva = reserveTotal();
+  if (db.settings.metaReservaMin > 0 && reserva < db.settings.metaReservaMin) {
+    push('aviso', `Sua reserva (${fmt(reserva)}) está abaixo da meta mínima de ${fmt(db.settings.metaReservaMin)}.`);
+  }
+
+  // Reembolsos parados
+  const hoje = new Date();
+  for (const r of db.reimbursements) {
+    if (['pendente', 'solicitado', 'parcial'].includes(r.status) && r.data) {
+      const dias = Math.round((hoje - new Date(r.data)) / 86400000);
+      if (dias > 15) {
+        const pessoa = db.people.find(p => p.id === r.pessoaId);
+        push('info', `Reembolso de ${fmt(reimbPending(r))}${pessoa ? ` de ${pessoa.nome}` : ''} está pendente há ${dias} dias.`);
+        break;
+      }
+    }
+  }
+
+  // Investimento planejado não realizado (apenas para meses passados ou o atual, no fim do mês)
+  if (ymDiff(ym, ymNow()) < 0 && s.investimentos > 0 && s.investRealizado < s.investimentos) {
+    push('info', `Em ${ymLabel(ym)}, o aporte realizado (${fmt(s.investRealizado)}) ficou abaixo do planejado (${fmt(s.investimentos)}).`);
+  }
+
+  return alerts;
+}
+
+// Simulação de compra parcelada: impacto mês a mês.
+function simulatePurchase({ valorTotal, numParcelas, mesInicio, cartaoId }) {
+  const valorParcela = (Number(valorTotal) || 0) / Math.max(1, Number(numParcelas) || 1);
+  const meses = [];
+  for (let i = 0; i < numParcelas; i++) {
+    const m = ymAdd(mesInicio, i);
+    const s = monthSummary(m);
+    const card = cartaoId ? db.cards.find(c => c.id === cartaoId) : null;
+    const fatura = card ? cardInvoice(card.id, m).total : 0;
+    meses.push({
+      ym: m,
+      valorParcela,
+      saldoAntes: s.saldoLivreReal,
+      saldoDepois: s.saldoLivreReal - valorParcela,
+      comprometimentoAntes: s.comprometimento,
+      comprometimentoDepois: s.receitaSegura > 0
+        ? s.comprometimento + (valorParcela / s.receitaSegura) * 100 : 0,
+      faturaAntes: fatura,
+      faturaDepois: fatura + valorParcela,
+      limiteCartao: card ? Number(card.limitePlanejado) || 0 : 0,
+    });
+  }
+  return { valorParcela, meses };
+}
+
+return { monthIncomes, monthExpenses, expenseNet, recurringOccurrences, monthInstallments, futureInstallmentsTotal, cardInvoice, provisionMonthly, monthProvisions, monthProvisionDeposits, monthInvestPlanned, monthInvestDone, totalInvested, reserveTotal, reimbPending, reimbOutstanding, monthReimbursements, monthSummary, commitmentBreakdown, expensesByCategory, annualRows, alertsFor, simulatePurchase };
+})();
+
+__m['charts'] = (() => {
+// Gráficos SVG leves: rosca, barras, barra empilhada horizontal e linhas.
+// Paleta categórica validada (derivada dos pastéis da identidade, com contraste adequado).
+const { h, fmt } = __m['utils'];
+
+const CHART_COLORS = ['#2E9E63', '#7A63B8', '#C06A7C', '#3D8FC4', '#B8862F'];
+const CHART_MUTED = '#9AA1A9';
+const INK = '#2F3437';
+const INK2 = '#6B7280';
+const GRID = '#E4E1D8';
+const SURFACE = '#FFFFFF';
+
+// Tooltip único compartilhado.
+let tipEl = null;
+function tooltip() {
+  if (!tipEl) {
+    tipEl = h('div', { class: 'chart-tip', style: 'display:none' });
+    document.body.append(tipEl);
+  }
+  return tipEl;
+}
+function showTip(evt, html) {
+  const t = tooltip();
+  t.innerHTML = html;
+  t.style.display = 'block';
+  const x = Math.min(evt.clientX + 12, window.innerWidth - t.offsetWidth - 12);
+  t.style.left = `${x}px`;
+  t.style.top = `${evt.clientY + 14}px`;
+}
+function hideTip() {
+  if (tipEl) tipEl.style.display = 'none';
+}
+
+function svg(w, hh, cls = '') {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  el.setAttribute('viewBox', `0 0 ${w} ${hh}`);
+  el.setAttribute('class', `chart ${cls}`);
+  el.setAttribute('role', 'img');
+  return el;
+}
+function s(tag, attrs = {}) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function legend(items) {
+  return h('div', { class: 'chart-legend' },
+    items.map(([label, color]) => h('span', { class: 'legend-item' },
+      h('span', { class: 'legend-dot', style: `background:${color}` }), label)));
+}
+
+// ---- Rosca (despesas por categoria). data: [[label, valor], ...] ----
+function donut(data, { size = 180, maxSlices = 5 } = {}) {
+  let items = data.filter(([, v]) => v > 0);
+  if (!items.length) return h('div', { class: 'chart-empty' }, 'Sem dados para exibir.');
+  if (items.length > maxSlices) {
+    const top = items.slice(0, maxSlices);
+    top.push(['Outros', items.slice(maxSlices).reduce((a, [, v]) => a + v, 0)]);
+    items = top;
+  }
+  const total = items.reduce((a, [, v]) => a + v, 0);
+  const r = size / 2 - 6, cx = size / 2, cy = size / 2, thick = 26;
+  const el = svg(size, size, 'donut');
+  let angle = -Math.PI / 2;
+  const colored = items.map(([label, v], i) => [label, v, label === 'Outros' ? CHART_MUTED : CHART_COLORS[i % CHART_COLORS.length]]);
+  for (const [label, v, color] of colored) {
+    const frac = v / total;
+    const a2 = angle + frac * Math.PI * 2 - 0.03; // 0.03 rad ≈ espaçador de 2px
+    const large = frac > 0.5 ? 1 : 0;
+    const p1 = [cx + r * Math.cos(angle), cy + r * Math.sin(angle)];
+    const p2 = [cx + r * Math.cos(a2), cy + r * Math.sin(a2)];
+    const path = s('path', {
+      d: `M ${p1[0]} ${p1[1]} A ${r} ${r} 0 ${large} 1 ${p2[0]} ${p2[1]}`,
+      fill: 'none', stroke: color, 'stroke-width': thick, 'stroke-linecap': 'butt',
+    });
+    path.addEventListener('mousemove', e => showTip(e, `<b>${label}</b><br>${fmt(v)} · ${(frac * 100).toFixed(0)}%`));
+    path.addEventListener('mouseleave', hideTip);
+    el.append(path);
+    angle = a2 + 0.03;
+  }
+  const center = s('text', { x: cx, y: cy - 4, 'text-anchor': 'middle', fill: INK, 'font-size': 15, 'font-weight': 600 });
+  center.textContent = fmt(total);
+  const sub = s('text', { x: cx, y: cy + 14, 'text-anchor': 'middle', fill: INK2, 'font-size': 11 });
+  sub.textContent = 'total';
+  el.append(center, sub);
+  return h('div', { class: 'chart-wrap' }, el, legend(colored.map(([l, , c]) => [l, c])));
+}
+
+// ---- Barra empilhada horizontal (comprometimento da renda) ----
+// segments: [[label, valor, cor], ...]; total = soma (ou receita segura).
+function hstack(segments, total) {
+  const width = 600, height = 44, barH = 22;
+  const el = svg(width, height, 'hstack');
+  const tot = Math.max(total, segments.reduce((a, [, v]) => a + v, 0)) || 1;
+  let x = 0;
+  for (const [label, v, color] of segments) {
+    if (v <= 0) continue;
+    const w = Math.max(0, (v / tot) * width - 2);
+    const rect = s('rect', { x, y: 10, width: w, height: barH, rx: 4, fill: color });
+    rect.addEventListener('mousemove', e => showTip(e, `<b>${label}</b><br>${fmt(v)} · ${(v / tot * 100).toFixed(0)}%`));
+    rect.addEventListener('mouseleave', hideTip);
+    el.append(rect);
+    x += w + 2;
+  }
+  return h('div', { class: 'chart-wrap' }, el,
+    legend(segments.filter(([, v]) => v > 0).map(([l, , c]) => [l, c])));
+}
+
+// ---- Barras verticais. labels: [..], series: [{name, color, values:[..]}] ----
+function bars(labels, series, { height = 220, money = true } = {}) {
+  const width = 640, padL = 56, padB = 26, padT = 12;
+  const el = svg(width, height, 'bars');
+  const all = series.flatMap(sr => sr.values);
+  const max = Math.max(...all, 0) || 1;
+  const min = Math.min(...all, 0);
+  const range = max - min || 1;
+  const y = v => padT + (max - v) / range * (height - padT - padB);
+  const zero = y(0);
+  // grade
+  for (let i = 0; i <= 3; i++) {
+    const v = min + range * i / 3;
+    const yy = y(v);
+    el.append(s('line', { x1: padL, y1: yy, x2: width - 8, y2: yy, stroke: GRID, 'stroke-width': 1 }));
+    const t = s('text', { x: padL - 6, y: yy + 4, 'text-anchor': 'end', fill: INK2, 'font-size': 10 });
+    t.textContent = money ? compact(v) : Math.round(v);
+    el.append(t);
+  }
+  const groupW = (width - padL - 16) / labels.length;
+  const barW = Math.min(26, (groupW - 6) / series.length - 2);
+  labels.forEach((label, li) => {
+    const gx = padL + li * groupW + groupW / 2 - (series.length * (barW + 2)) / 2;
+    series.forEach((sr, si) => {
+      const v = sr.values[li] || 0;
+      const yy = y(Math.max(0, v)), hh = Math.abs(y(v) - zero);
+      const rect = s('rect', {
+        x: gx + si * (barW + 2), y: v >= 0 ? yy : zero, width: barW, height: Math.max(1, hh),
+        rx: 3, fill: v >= 0 ? sr.color : '#E57373',
+      });
+      rect.addEventListener('mousemove', e => showTip(e, `<b>${label}</b><br>${sr.name}: ${money ? fmt(v) : v}`));
+      rect.addEventListener('mouseleave', hideTip);
+      el.append(rect);
+    });
+    const t = s('text', { x: padL + li * groupW + groupW / 2, y: height - 8, 'text-anchor': 'middle', fill: INK2, 'font-size': 10 });
+    t.textContent = label;
+    el.append(t);
+  });
+  el.append(s('line', { x1: padL, y1: zero, x2: width - 8, y2: zero, stroke: INK2, 'stroke-width': 1 }));
+  const wrap = h('div', { class: 'chart-wrap chart-scroll' }, el);
+  if (series.length > 1) wrap.append(legend(series.map(sr => [sr.name, sr.color])));
+  return wrap;
+}
+
+// ---- Linhas. labels: [..], series: [{name, color, values:[..]}] ----
+function lines(labels, series, { height = 220 } = {}) {
+  const width = 640, padL = 56, padB = 26, padT = 12;
+  const el = svg(width, height, 'lines');
+  const all = series.flatMap(sr => sr.values);
+  const max = Math.max(...all, 0) || 1;
+  const min = Math.min(...all, 0);
+  const range = max - min || 1;
+  const y = v => padT + (max - v) / range * (height - padT - padB);
+  const x = i => padL + i * (width - padL - 16) / Math.max(1, labels.length - 1);
+  for (let i = 0; i <= 3; i++) {
+    const v = min + range * i / 3;
+    el.append(s('line', { x1: padL, y1: y(v), x2: width - 8, y2: y(v), stroke: GRID, 'stroke-width': 1 }));
+    const t = s('text', { x: padL - 6, y: y(v) + 4, 'text-anchor': 'end', fill: INK2, 'font-size': 10 });
+    t.textContent = compact(v);
+    el.append(t);
+  }
+  if (min < 0) el.append(s('line', { x1: padL, y1: y(0), x2: width - 8, y2: y(0), stroke: INK2, 'stroke-width': 1, 'stroke-dasharray': '3 3' }));
+  labels.forEach((label, i) => {
+    if (labels.length > 8 && i % 2 !== 0) return;
+    const t = s('text', { x: x(i), y: height - 8, 'text-anchor': 'middle', fill: INK2, 'font-size': 10 });
+    t.textContent = label;
+    el.append(t);
+  });
+  for (const sr of series) {
+    const d = sr.values.map((v, i) => `${i ? 'L' : 'M'} ${x(i)} ${y(v)}`).join(' ');
+    el.append(s('path', { d, fill: 'none', stroke: sr.color, 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+    sr.values.forEach((v, i) => {
+      const dot = s('circle', { cx: x(i), cy: y(v), r: 4, fill: sr.color, stroke: SURFACE, 'stroke-width': 2 });
+      dot.addEventListener('mousemove', e => showTip(e, `<b>${labels[i]}</b><br>${sr.name}: ${fmt(v)}`));
+      dot.addEventListener('mouseleave', hideTip);
+      el.append(dot);
+    });
+  }
+  const wrap = h('div', { class: 'chart-wrap chart-scroll' }, el);
+  if (series.length > 1) wrap.append(legend(series.map(sr => [sr.name, sr.color])));
+  return wrap;
+}
+
+function compact(v) {
+  const abs = Math.abs(v);
+  if (abs >= 1000000) return `${(v / 1000000).toFixed(1)}M`;
+  if (abs >= 1000) return `${(v / 1000).toFixed(abs >= 10000 ? 0 : 1)}k`;
+  return String(Math.round(v));
+}
+
+return { CHART_COLORS, CHART_MUTED, showTip, hideTip, donut, hstack, bars, lines };
+})();
+
+__m['ui'] = (() => {
+// Componentes de interface reutilizáveis: modal, formulário, tabela, badges.
+const { h, fmt, fmtDate } = __m['utils'];
+
+// ---- Modal ----
+function modal(title, content, { wide = false } = {}) {
+  const overlay = h('div', { class: 'modal-overlay' });
+  const box = h('div', { class: `modal ${wide ? 'modal-wide' : ''}` },
+    h('div', { class: 'modal-head' },
+      h('h3', {}, title),
+      h('button', { class: 'icon-btn', 'aria-label': 'Fechar', onclick: () => overlay.remove() }, '✕')),
+    h('div', { class: 'modal-body' }, content));
+  overlay.append(box);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.append(overlay);
+  return overlay;
+}
+
+// ---- Formulário genérico ----
+// fields: [{k, label, type, options, value, required, placeholder, help, show(vals), onchange(vals, formEl)}]
+// type: text | money | number | date | month | select | check | textarea
+function formModal(title, fields, values, onSave, { wide = false, saveLabel = 'Salvar' } = {}) {
+  const vals = { ...values };
+  const form = h('form', { class: 'form-grid' });
+
+  function fieldInput(f) {
+    const cur = vals[f.k] ?? f.value ?? (f.type === 'check' ? false : '');
+    let input;
+    if (f.type === 'select') {
+      input = h('select', { name: f.k },
+        f.required ? [] : h('option', { value: '' }, '—'),
+        (f.options || []).map(o => {
+          const [v, label] = Array.isArray(o) ? o : [o, o];
+          return h('option', { value: v, selected: String(cur) === String(v) }, label);
+        }));
+    } else if (f.type === 'textarea') {
+      input = h('textarea', { name: f.k, rows: 2, placeholder: f.placeholder || '' }, cur || '');
+    } else if (f.type === 'check') {
+      input = h('input', { type: 'checkbox', name: f.k });
+      input.checked = !!cur;
+    } else {
+      const typeMap = { money: 'number', number: 'number', date: 'date', month: 'month', text: 'text' };
+      input = h('input', {
+        type: typeMap[f.type] || 'text', name: f.k, value: cur ?? '',
+        step: f.type === 'money' ? '0.01' : (f.step || 'any'),
+        placeholder: f.placeholder || '', required: !!f.required,
+        min: f.min, max: f.max,
+      });
+    }
+    // Selects exibem a primeira opção por padrão; refletir isso em vals.
+    if (f.type === 'select' && (vals[f.k] === undefined || vals[f.k] === null)) vals[f.k] = input.value;
+    input.addEventListener('input', () => {
+      vals[f.k] = f.type === 'check' ? input.checked :
+        (f.type === 'money' || f.type === 'number') ? (input.value === '' ? '' : Number(input.value)) : input.value;
+      if (f.onchange) f.onchange(vals, form);
+      refreshVisibility();
+      syncValues(input);
+    });
+    row_inputs.set(f.k, input);
+    return input;
+  }
+
+  // Reflete nos inputs os valores alterados por onchange (campos calculados).
+  const row_inputs = new Map();
+  function syncValues(except) {
+    for (const [k, input] of row_inputs) {
+      if (input === except || input.type === 'checkbox') continue;
+      const v = vals[k];
+      if (v !== undefined && v !== null && String(input.value) !== String(v)) input.value = v;
+    }
+  }
+
+  const rows = fields.map(f => {
+    const input = fieldInput(f);
+    const row = f.type === 'check'
+      ? h('label', { class: 'form-field form-check', 'data-k': f.k }, input, h('span', {}, f.label))
+      : h('label', { class: `form-field ${f.full ? 'form-full' : ''}`, 'data-k': f.k },
+          h('span', { class: 'form-label' }, f.label + (f.required ? ' *' : '')),
+          input,
+          f.help ? h('small', { class: 'form-help' }, f.help) : null);
+    row._field = f;
+    return row;
+  });
+  form.append(...rows);
+
+  function refreshVisibility() {
+    for (const row of rows) {
+      const f = row._field;
+      row.style.display = (f.show && !f.show(vals)) ? 'none' : '';
+    }
+  }
+  // valores iniciais
+  for (const f of fields) if (vals[f.k] === undefined && f.value !== undefined) vals[f.k] = f.value;
+  refreshVisibility();
+
+  const err = h('div', { class: 'form-error', style: 'display:none' });
+  const overlay = modal(title, h('div', {}, form, err,
+    h('div', { class: 'modal-actions' },
+      h('button', { class: 'btn btn-ghost', type: 'button', onclick: () => overlay.remove() }, 'Cancelar'),
+      h('button', {
+        class: 'btn btn-primary', type: 'button', onclick: () => {
+          for (const f of fields) {
+            if (f.required && (f.show ? f.show(vals) : true)) {
+              const v = vals[f.k];
+              if (v === '' || v === undefined || v === null) {
+                err.textContent = `Preencha o campo "${f.label}".`;
+                err.style.display = 'block';
+                return;
+              }
+            }
+          }
+          const res = onSave(vals);
+          if (typeof res === 'string') { err.textContent = res; err.style.display = 'block'; return; }
+          overlay.remove();
+        },
+      }, saveLabel))), { wide });
+  return overlay;
+}
+
+function confirmModal(msg, onYes, { yesLabel = 'Excluir', danger = true } = {}) {
+  const overlay = modal('Confirmar', h('div', {},
+    h('p', {}, msg),
+    h('div', { class: 'modal-actions' },
+      h('button', { class: 'btn btn-ghost', onclick: () => overlay.remove() }, 'Cancelar'),
+      h('button', { class: `btn ${danger ? 'btn-danger' : 'btn-primary'}`, onclick: () => { onYes(); overlay.remove(); } }, yesLabel))));
+}
+
+// ---- Tabela ----
+// cols: [{label, render(row) | k, money, right}]
+function table(cols, rows, { empty = 'Nenhum registro.' } = {}) {
+  if (!rows.length) return h('div', { class: 'empty-state' }, empty);
+  return h('div', { class: 'table-scroll' },
+    h('table', { class: 'table' },
+      h('thead', {}, h('tr', {}, cols.map(c => h('th', { class: c.right || c.money ? 'right' : '' }, c.label)))),
+      h('tbody', {}, rows.map(r => h('tr', {}, cols.map(c => {
+        let content = c.render ? c.render(r) : r[c.k];
+        if (c.money) content = fmt(content);
+        if (c.date) content = fmtDate(content);
+        return h('td', { class: c.right || c.money ? 'right' : '' }, content ?? '—');
+      }))))));
+}
+
+// ---- Badges de status ----
+const BADGE_STYLES = {
+  pago: 'ok', recebida: 'ok', concluida: 'ok', ativa: 'ok',
+  vencido: 'bad', atrasada: 'bad', atrasado: 'bad', contestado: 'bad',
+  parcial: 'warn', solicitado: 'info',
+  previsto: 'muted', prevista: 'muted', pendente: 'warn',
+  cancelado: 'muted', cancelada: 'muted', pausada: 'muted', reembolsado: 'info',
+};
+const BADGE_LABELS = {
+  pago: 'Pago', recebida: 'Recebida', previsto: 'Previsto', prevista: 'Prevista',
+  vencido: 'Vencido', atrasada: 'Atrasada', atrasado: 'Atrasado', cancelado: 'Cancelado',
+  cancelada: 'Cancelada', parcial: 'Parcial', pendente: 'Pendente', solicitado: 'Solicitado',
+  contestado: 'Contestado', reembolsado: 'Reembolsado', ativa: 'Ativa', pausada: 'Pausada',
+  concluida: 'Concluída',
+};
+function badge(status) {
+  return h('span', { class: `badge badge-${BADGE_STYLES[status] || 'muted'}` }, BADGE_LABELS[status] || status || '—');
+}
+
+// ---- Cards de resumo ----
+function statCard(label, value, { tone = '', sub = '', onclick } = {}) {
+  const el = h('div', { class: `stat-card ${tone} ${onclick ? 'clickable' : ''}` },
+    h('div', { class: 'stat-label' }, label),
+    h('div', { class: 'stat-value' }, typeof value === 'number' ? fmt(value) : value),
+    sub ? h('div', { class: 'stat-sub' }, sub) : null);
+  if (onclick) el.addEventListener('click', onclick);
+  return el;
+}
+
+function card(title, ...children) {
+  return h('section', { class: 'card' },
+    title ? h('h2', { class: 'card-title' }, title) : null, ...children);
+}
+
+function alertBanner(alerts) {
+  if (!alerts.length) return null;
+  return h('div', { class: 'alerts' }, alerts.map(a =>
+    h('div', { class: `alert alert-${a.level}` },
+      h('span', { class: 'alert-icon' }, a.level === 'erro' ? '⚠️' : a.level === 'aviso' ? '🔔' : 'ℹ️'),
+      a.msg)));
+}
+
+// ---- Toast ----
+function toast(msg) {
+  const t = h('div', { class: 'toast' }, msg);
+  document.body.append(t);
+  setTimeout(() => t.classList.add('show'), 10);
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 2600);
+}
+
+// Botões de ação em linha de tabela
+function rowActions(...btns) {
+  return h('div', { class: 'row-actions' }, btns.map(([label, fn, title]) =>
+    h('button', { class: 'icon-btn', title: title || label, onclick: fn }, label)));
+}
+
+return { modal, formModal, confirmModal, table, badge, statCard, card, alertBanner, toast, rowActions };
+})();
+
+__m['dashboard'] = (() => {
+// Dashboard mensal: visão consolidada, comprometimento da renda e alertas.
+const { h, fmt, fmtPct, ymAdd, ymShort } = __m['utils'];
+const { ui, db } = __m['store'];
+const { monthSummary, commitmentBreakdown, expensesByCategory, alertsFor, futureInstallmentsTotal, monthSummary: ms } = __m['calc'];
+const { statCard, card, alertBanner } = __m['ui'];
+const { donut, hstack, lines, bars, CHART_COLORS, CHART_MUTED } = __m['charts'];
+
+function render(el) {
+  const ym = ui.month;
+  const s = monthSummary(ym);
+  const alerts = alertsFor(ym);
+
+  el.append(alertBanner(alerts) || '');
+
+  const tone = v => v < 0 ? 'tone-bad' : 'tone-ok';
+  el.append(h('div', { class: 'grid grid-cards' },
+    statCard('Receita total do mês', s.receitaTotal),
+    statCard('Receita segura', s.receitaSegura, { sub: 'salário e rendas garantidas' }),
+    statCard('Receita variável', s.receitaVariavel),
+    statCard('Despesas totais', s.despesasTotais),
+    statCard('Despesas fixas', s.despesasFixas, { sub: 'inclui contas recorrentes' }),
+    statCard('Despesas variáveis', s.despVariaveis),
+    statCard('Parcelamentos do mês', s.parcelamentos, { onclick: () => location.hash = '#/cartoes' }),
+    statCard('Provisões do mês', s.provisoes, { onclick: () => location.hash = '#/provisoes' }),
+    statCard('Investimentos do mês', s.investimentos, { sub: `realizado: ${fmt(s.investRealizado)}`, onclick: () => location.hash = '#/investimentos' }),
+    statCard('Reembolsos a receber', s.reembolsosAReceber, { tone: s.reembolsosAReceber > 0 ? 'tone-warn' : '', onclick: () => location.hash = '#/reembolsos' }),
+    statCard('Saldo previsto', s.saldoPrevisto, { tone: tone(s.saldoPrevisto) }),
+    statCard('Saldo livre real', s.saldoLivreReal, { tone: tone(s.saldoLivreReal), sub: 'livre de verdade para gastar' }),
+    statCard('Renda comprometida', fmtPct(s.comprometimento), {
+      tone: s.comprometimento > 85 ? 'tone-bad' : s.comprometimento > 70 ? 'tone-warn' : 'tone-ok',
+    })));
+
+  // Comprometimento da renda
+  const bd = commitmentBreakdown(ym);
+  const colors = [CHART_COLORS[1], CHART_COLORS[2], CHART_COLORS[4], CHART_COLORS[3], CHART_COLORS[0], '#D8E2DC'];
+  const meterColor = s.comprometimento > 85 ? '#E57373' : s.comprometimento > 70 ? '#F6C667' : '#7BC99A';
+  el.append(card('Comprometimento da renda segura',
+    h('div', { class: 'commit-meter' },
+      h('div', { style: `width:${Math.min(100, s.comprometimento)}%;background:${meterColor}` })),
+    h('div', { class: 'stat-sub', style: 'margin-bottom:10px' },
+      s.receitaSegura > 0
+        ? `${fmtPct(s.comprometimento)} da renda segura já está comprometida. Saldo livre real: ${fmt(s.saldoLivreReal)}.`
+        : 'Cadastre sua receita segura para acompanhar o comprometimento.'),
+    bd.receitaSegura > 0 ? hstack(bd.partes.map(([l, v], i) => [l, v, colors[i]]), bd.receitaSegura) : null));
+
+  // Gráficos lado a lado
+  const cats = expensesByCategory(ym);
+  el.append(h('div', { class: 'grid grid-2' },
+    card('Despesas por categoria', donut(cats)),
+    card('Fixas × variáveis × parcelas',
+      bars([ymShort(ym)], [
+        { name: 'Fixas', color: CHART_COLORS[0], values: [s.despesasFixas] },
+        { name: 'Variáveis', color: CHART_COLORS[1], values: [s.despVariaveis] },
+        { name: 'Parcelas', color: CHART_COLORS[2], values: [s.parcelamentos] },
+      ], { height: 200 }))));
+
+  // Evolução do saldo livre (6 meses atrás + 6 à frente)
+  const months = Array.from({ length: 13 }, (_, i) => ymAdd(ym, i - 6));
+  el.append(card('Evolução do saldo livre real (projeção inclui parcelas futuras)',
+    lines(months.map(ymShort), [
+      { name: 'Saldo livre real', color: CHART_COLORS[0], values: months.map(m => ms(m).saldoLivreReal) },
+    ], { height: 210 })));
+
+  el.append(h('div', { class: 'grid grid-cards' },
+    statCard('Parcelamentos futuros já comprometidos', futureInstallmentsTotal(ym),
+      { sub: 'a partir do mês seguinte', onclick: () => location.hash = '#/cartoes' }),
+    statCard('Contas recorrentes do mês', s.recorrentes, { onclick: () => location.hash = '#/recorrentes' })));
+}
+
+return { render };
+})();
+
+__m['anual'] = (() => {
+// Dashboard anual: acumulados, projeções e tabela mês a mês.
+const { h, fmt, fmtPct, ymShort, ymNow, ymDiff, sum, ymOf } = __m['utils'];
+const { ui, db } = __m['store'];
+const { annualRows, totalInvested, reserveTotal, futureInstallmentsTotal, monthInvestDone, reimbOutstanding } = __m['calc'];
+const { statCard, card, table } = __m['ui'];
+const { lines, bars, CHART_COLORS } = __m['charts'];
+
+function render(el, rerender) {
+  const year = ui.year;
+  el.append(h('div', { class: 'topbar' },
+    h('div', { class: 'month-picker' },
+      h('button', { onclick: () => { ui.year--; rerender(); } }, '‹'),
+      h('span', { class: 'month-label' }, String(year)),
+      h('button', { onclick: () => { ui.year++; rerender(); } }, '›'))));
+
+  const rows = annualRows(year);
+  const now = ymNow();
+  const passados = rows.filter(r => ymDiff(r.ym, now) <= 0);
+
+  const reembolsosRecebidos = sum(
+    db.reimbursements.filter(r => r.dataRecebimento && ymOf(r.dataRecebimento).startsWith(String(year))),
+    r => r.valorRecebido);
+
+  el.append(h('div', { class: 'grid grid-cards' },
+    statCard('Receitas no ano', sum(rows, r => r.receitaTotal), { sub: 'realizado + previsto' }),
+    statCard('Despesas no ano', sum(rows, r => r.despesasTotais)),
+    statCard('Investimentos aportados', sum(rows.map(r => monthInvestDone(r.ym)))),
+    statCard('Provisões planejadas', sum(rows, r => r.provisoes)),
+    statCard('Reembolsos recebidos', reembolsosRecebidos),
+    statCard('Reembolsos pendentes', reimbOutstanding(), { tone: reimbOutstanding() > 0 ? 'tone-warn' : '' }),
+    statCard('Saldo líquido acumulado', sum(rows, r => r.saldoPrevisto), { tone: sum(rows, r => r.saldoPrevisto) < 0 ? 'tone-bad' : 'tone-ok' }),
+    statCard('Parcelas futuras comprometidas', futureInstallmentsTotal(now)),
+    statCard('Patrimônio investido hoje', totalInvested(), { tone: 'tone-accent' }),
+    statCard('Reserva de emergência', reserveTotal(), {
+      sub: db.settings.metaReservaMin ? `meta mínima: ${fmt(db.settings.metaReservaMin)}` : '',
+      tone: reserveTotal() < db.settings.metaReservaMin ? 'tone-warn' : 'tone-ok',
+    })));
+
+  const labels = rows.map(r => ymShort(r.ym));
+  el.append(card('Receitas, despesas e investimentos mês a mês',
+    lines(labels, [
+      { name: 'Receitas', color: CHART_COLORS[0], values: rows.map(r => r.receitaTotal) },
+      { name: 'Despesas', color: CHART_COLORS[2], values: rows.map(r => r.despesasTotais) },
+      { name: 'Investimentos', color: CHART_COLORS[1], values: rows.map(r => r.investimentos) },
+    ])));
+
+  el.append(h('div', { class: 'grid grid-2' },
+    card('Saldo previsto por mês',
+      bars(labels, [{ name: 'Saldo previsto', color: CHART_COLORS[3], values: rows.map(r => r.saldoPrevisto) }], { height: 200 })),
+    card('Parcelamentos comprometidos por mês',
+      bars(labels, [{ name: 'Parcelas', color: CHART_COLORS[4], values: rows.map(r => r.parcelamentos) }], { height: 200 }))));
+
+  const futuro = r => ymDiff(r.ym, now) > 0;
+  el.append(card(`Tabela mês a mês de ${year} (meses futuros são projeção)`,
+    table([
+      { label: 'Mês', render: r => h('span', { style: futuro(r) ? 'color:var(--ink-2);font-style:italic' : 'font-weight:600' }, ymShort(r.ym)) },
+      { label: 'Receita segura', k: 'receitaSegura', money: true },
+      { label: 'Receita variável', k: 'receitaVariavel', money: true },
+      { label: 'Desp. fixas', k: 'despesasFixas', money: true },
+      { label: 'Desp. variáveis', k: 'despVariaveis', money: true },
+      { label: 'Parcelas', k: 'parcelamentos', money: true },
+      { label: 'Provisões', k: 'provisoes', money: true },
+      { label: 'Invest.', k: 'investimentos', money: true },
+      { label: 'Reemb. a receber', k: 'reembolsosMes', money: true },
+      { label: 'Saldo previsto', render: r => h('span', { style: r.saldoPrevisto < 0 ? 'color:var(--erro);font-weight:600' : '' }, fmt(r.saldoPrevisto)), right: true },
+      { label: 'Saldo livre real', render: r => h('span', { style: r.saldoLivreReal < 0 ? 'color:var(--erro);font-weight:600' : 'color:#2E7D53;font-weight:600' }, fmt(r.saldoLivreReal)), right: true },
+      { label: 'Comprometido', render: r => fmtPct(r.comprometimento), right: true },
+    ], rows)));
+}
+
+return { render };
+})();
+
+__m['receitas'] = (() => {
+// Receitas: cadastro, recorrência e acompanhamento.
+const { h, fmt, todayISO, sum } = __m['utils'];
+const { db, ui, add, update, remove, save, TIPOS_RECEITA, STATUS_RECEITA } = __m['store'];
+const { monthIncomes } = __m['calc'];
+const { card, table, badge, formModal, confirmModal, rowActions, statCard, toast } = __m['ui'];
+
+const TIPO_LABEL = Object.fromEntries(TIPOS_RECEITA);
+
+function fields(vals = {}) {
+  return [
+    { k: 'data', label: 'Data de recebimento', type: 'date', required: true, value: todayISO() },
+    { k: 'descricao', label: 'Descrição', type: 'text', required: true, placeholder: 'Ex.: Salário, aula, projeto…' },
+    { k: 'categoria', label: 'Categoria', type: 'select', options: db.categoriesIncome.map(c => c.nome), required: true },
+    { k: 'valor', label: 'Valor (R$)', type: 'money', required: true },
+    { k: 'tipo', label: 'Tipo de receita', type: 'select', options: TIPOS_RECEITA, required: true, value: 'segura',
+      help: 'Reembolsos devem ser registrados na tela Reembolsos, vinculados à despesa original.' },
+    { k: 'status', label: 'Status', type: 'select', options: STATUS_RECEITA, required: true, value: 'prevista' },
+    { k: 'recorrente', label: 'Receita recorrente (repete todo mês)', type: 'check' },
+    { k: 'obs', label: 'Observações', type: 'textarea', full: true },
+  ];
+}
+
+function render(el, rerender) {
+  const ym = ui.month;
+  const incomes = monthIncomes(ym).sort((a, b) => a.data.localeCompare(b.data));
+
+  el.append(h('div', { class: 'grid grid-cards' },
+    statCard('Total do mês', sum(incomes, i => i.valor)),
+    statCard('Recebido', sum(incomes.filter(i => i.status === 'recebida'), i => i.valor), { tone: 'tone-ok' }),
+    statCard('Previsto', sum(incomes.filter(i => i.status === 'prevista'), i => i.valor)),
+    statCard('Segura', sum(incomes.filter(i => i.tipo === 'segura'), i => i.valor))));
+
+  const addBtn = h('button', {
+    class: 'btn btn-primary btn-sm',
+    onclick: () => formModal('Nova receita', fields(), {}, vals => { add('incomes', vals); rerender(); }),
+  }, '+ Nova receita');
+
+  el.append(card(null,
+    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, 'Receitas do mês'), addBtn),
+    table([
+      { label: 'Data', k: 'data', date: true },
+      { label: 'Descrição', render: r => h('span', {}, r.descricao, r.recorrente || r.virtual ? h('span', { title: 'Recorrente', style: 'margin-left:6px' }, '🔁') : null) },
+      { label: 'Categoria', k: 'categoria' },
+      { label: 'Tipo', render: r => TIPO_LABEL[r.tipo] || r.tipo },
+      { label: 'Valor', k: 'valor', money: true },
+      { label: 'Status', render: r => badge(r.status) },
+      { label: '', render: r => actions(r, rerender), right: true },
+    ], incomes, { empty: 'Nenhuma receita neste mês. Cadastre sua renda para começar.' })));
+}
+
+function actions(r, rerender) {
+  // Ocorrência projetada de receita recorrente: ao editar/receber, materializa o lançamento no mês.
+  const materialize = () => {
+    if (!r.virtual) return r;
+    const real = { ...r, id: undefined, virtual: undefined };
+    return add('incomes', real);
+  };
+  const btns = [];
+  if (r.status !== 'recebida') {
+    btns.push(['✔️', () => {
+      const real = materialize();
+      update('incomes', real.id, { status: 'recebida' });
+      toast('Receita marcada como recebida.');
+      rerender();
+    }, 'Marcar como recebida']);
+  }
+  btns.push(['✏️', () => {
+    const real = materialize();
+    formModal('Editar receita', fields(), real, vals => { update('incomes', real.id, vals); rerender(); });
+  }, 'Editar']);
+  if (!r.virtual) {
+    btns.push(['🗑', () => confirmModal(`Excluir a receita "${r.descricao}"?${r.recorrente ? ' As projeções futuras também deixarão de aparecer.' : ''}`, () => { remove('incomes', r.id); rerender(); }), 'Excluir']);
+  }
+  return rowActions(...btns);
+}
+
+return { render };
+})();
+
+__m['despesas'] = (() => {
+// Despesas avulsas: cadastro completo, pagamento rápido, duplicação e filtros.
+const { h, fmt, todayISO, sum, uid } = __m['utils'];
+const { db, ui, add, update, remove, save, applyRules, CLASSIFICACAO_DESPESA, STATUS_DESPESA, FORMAS_PAGAMENTO, } = __m['store'];
+const { monthExpenses, expenseNet } = __m['calc'];
+const { card, table, badge, formModal, confirmModal, rowActions, statCard, toast } = __m['ui'];
+
+function fields(vals = {}) {
+  const cats = db.categoriesExpense.map(c => c.nome);
+  return [
+    { k: 'descricao', label: 'Descrição', type: 'text', required: true, full: true,
+      onchange: v => {
+        const sugestao = applyRules(v.descricao);
+        if (sugestao.categoria && !v.categoria) v.categoria = sugestao.categoria;
+      } },
+    { k: 'dataCompra', label: 'Data da compra', type: 'date', required: true, value: todayISO() },
+    { k: 'dataVencimento', label: 'Data de vencimento', type: 'date', help: 'Se vazio, usa a data da compra.' },
+    { k: 'categoria', label: 'Categoria', type: 'select', options: cats },
+    { k: 'subcategoria', label: 'Subcategoria', type: 'text' },
+    { k: 'valorTotal', label: 'Valor total (R$)', type: 'money', required: true },
+    { k: 'formaPagamento', label: 'Forma de pagamento', type: 'select', options: FORMAS_PAGAMENTO },
+    { k: 'banco', label: 'Banco', type: 'select', options: db.banks.map(b => b.nome) },
+    { k: 'cartaoId', label: 'Cartão', type: 'select', options: db.cards.map(c => [c.id, c.nome]),
+      show: v => v.formaPagamento === 'Cartão de crédito' },
+    { k: 'natureza', label: 'Natureza', type: 'select', options: [['fixa', 'Fixa'], ['variavel', 'Variável']], value: 'variavel', required: true },
+    { k: 'tipo', label: 'Classificação estratégica', type: 'select', options: CLASSIFICACAO_DESPESA },
+    { k: 'status', label: 'Status de pagamento', type: 'select', options: STATUS_DESPESA, value: 'previsto', required: true },
+    { k: 'responsavel', label: 'Responsável', type: 'text', placeholder: 'Quem fez o gasto' },
+    { k: 'reembolsavel', label: 'Despesa reembolsável / compartilhada', type: 'check' },
+    { k: 'pessoaId', label: 'Pessoa que vai reembolsar', type: 'select',
+      options: db.people.map(p => [p.id, p.nome]), show: v => v.reembolsavel,
+      help: db.people.length ? '' : 'Cadastre pessoas em Configurações.' },
+    { k: 'valorReembolsavel', label: 'Valor a reembolsar (R$)', type: 'money', show: v => v.reembolsavel,
+      help: 'Só a parte líquida (total − reembolso) pesa no seu orçamento.' },
+    { k: 'provisao', label: 'Compõe uma provisão', type: 'check' },
+    { k: 'comprovante', label: 'Comprovante (nome do arquivo ou link)', type: 'text', full: true },
+    { k: 'obs', label: 'Observações', type: 'textarea', full: true },
+  ];
+}
+
+// Ao salvar despesa reembolsável, mantém o registro de reembolso vinculado em sincronia.
+function syncReimbursement(exp) {
+  const existing = db.reimbursements.find(r => r.expenseId === exp.id);
+  if (exp.reembolsavel && exp.pessoaId && Number(exp.valorReembolsavel) > 0) {
+    if (existing) {
+      Object.assign(existing, {
+        pessoaId: exp.pessoaId, valorAReembolsar: Number(exp.valorReembolsavel),
+        descricao: exp.descricao, data: exp.dataCompra, valorTotalDespesa: Number(exp.valorTotal),
+        categoria: exp.categoria,
+      });
+    } else {
+      db.reimbursements.push({
+        id: uid(), expenseId: exp.id, pessoaId: exp.pessoaId,
+        descricao: exp.descricao, data: exp.dataCompra, categoria: exp.categoria,
+        valorTotalDespesa: Number(exp.valorTotal), criterio: 'fixo', percentual: '',
+        valorAReembolsar: Number(exp.valorReembolsavel), valorRecebido: 0,
+        status: 'pendente', dataSolicitacao: '', dataRecebimento: '', obs: '',
+      });
+    }
+  } else if (existing && ['pendente', 'solicitado'].includes(existing.status)) {
+    db.reimbursements = db.reimbursements.filter(r => r !== existing);
+  }
+  save();
+}
+
+function saveExpense(vals, id) {
+  if (!vals.dataVencimento) vals.dataVencimento = vals.dataCompra;
+  const exp = id ? update('expenses', id, vals) : add('expenses', vals);
+  syncReimbursement(exp);
+  return exp;
+}
+
+function quickAdd(rerender) {
+  formModal('Nova despesa', fields(), {}, vals => { saveExpense(vals); toast('Despesa cadastrada.'); rerender(); }, { wide: true });
+}
+
+function markPaid(exp, rerender) {
+  formModal('Registrar pagamento', [
+    { k: 'dataPagamento', label: 'Data do pagamento', type: 'date', required: true, value: todayISO() },
+    { k: 'formaPagamento', label: 'Forma de pagamento', type: 'select', options: FORMAS_PAGAMENTO, value: exp.formaPagamento },
+  ], {}, vals => {
+    update('expenses', exp.id, { status: 'pago', ...vals });
+    toast('Despesa marcada como paga.');
+    rerender();
+  }, { saveLabel: 'Confirmar pagamento' });
+}
+
+const filtro = { categoria: '', status: '', cartao: '' };
+
+function render(el, rerender) {
+  const ym = ui.month;
+  let list = monthExpenses(ym);
+  if (filtro.categoria) list = list.filter(e => e.categoria === filtro.categoria);
+  if (filtro.status) list = list.filter(e => e.status === filtro.status);
+  if (filtro.cartao) list = list.filter(e => e.cartaoId === filtro.cartao);
+  list.sort((a, b) => (a.dataVencimento || a.dataCompra).localeCompare(b.dataVencimento || b.dataCompra));
+
+  const bruta = sum(list, e => e.valorTotal);
+  const liquida = sum(list, expenseNet);
+
+  el.append(h('div', { class: 'grid grid-cards' },
+    statCard('Despesa bruta do mês', bruta, { sub: 'tudo que você paga' }),
+    statCard('Despesa líquida real', liquida, { sub: 'descontando reembolsos', tone: 'tone-accent' }),
+    statCard('Pagas', sum(list.filter(e => e.status === 'pago'), e => e.valorTotal), { tone: 'tone-ok' }),
+    statCard('Em aberto', sum(list.filter(e => ['previsto', 'vencido', 'parcial'].includes(e.status)), e => e.valorTotal))));
+
+  const sel = (k, opts, label) => {
+    const s = h('select', { onchange: e => { filtro[k] = e.target.value; rerender(); } },
+      h('option', { value: '' }, label),
+      opts.map(o => {
+        const [v, l] = Array.isArray(o) ? o : [o, o];
+        return h('option', { value: v, selected: filtro[k] === v }, l);
+      }));
+    return s;
+  };
+
+  el.append(card(null,
+    h('div', { class: 'card-head' },
+      h('h2', { class: 'card-title' }, 'Despesas do mês'),
+      h('button', { class: 'btn btn-primary btn-sm', onclick: () => quickAdd(rerender) }, '+ Nova despesa')),
+    h('div', { class: 'filters' },
+      sel('categoria', db.categoriesExpense.map(c => c.nome), 'Todas as categorias'),
+      sel('status', STATUS_DESPESA, 'Todos os status'),
+      db.cards.length ? sel('cartao', db.cards.map(c => [c.id, c.nome]), 'Todos os cartões') : null),
+    table([
+      { label: 'Vencimento', render: e => e.dataVencimento || e.dataCompra, date: true },
+      { label: 'Descrição', render: e => h('span', {},
+          e.descricao,
+          e.reembolsavel ? h('span', { title: 'Reembolsável', style: 'margin-left:5px' }, '🤝') : null,
+          !e.categoria ? h('span', { class: 'badge badge-warn', style: 'margin-left:6px' }, 'sem categoria') : null) },
+      { label: 'Categoria', k: 'categoria' },
+      { label: 'Valor', k: 'valorTotal', money: true },
+      { label: 'Líquido', render: e => e.reembolsavel ? fmt(expenseNet(e)) : '—', right: true },
+      { label: 'Pagamento', k: 'formaPagamento' },
+      { label: 'Status', render: e => badge(e.status) },
+      { label: '', render: e => actions(e, rerender), right: true },
+    ], list, { empty: 'Nenhuma despesa neste mês.' })));
+}
+
+function actions(e, rerender) {
+  const btns = [];
+  if (e.status !== 'pago') btns.push(['✔️', () => markPaid(e, rerender), 'Marcar como paga']);
+  btns.push(
+    ['✏️', () => formModal('Editar despesa', fields(), e, vals => { saveExpense(vals, e.id); rerender(); }, { wide: true }), 'Editar'],
+    ['⧉', () => {
+      const copy = { ...e, id: undefined, status: 'previsto', dataPagamento: '' };
+      formModal('Duplicar despesa', fields(), copy, vals => { saveExpense(vals); toast('Despesa duplicada.'); rerender(); }, { wide: true });
+    }, 'Duplicar'],
+    ['🗑', () => confirmModal(`Excluir a despesa "${e.descricao}"?`, () => {
+      db.reimbursements = db.reimbursements.filter(r => r.expenseId !== e.id);
+      remove('expenses', e.id);
+      rerender();
+    }), 'Excluir']);
+  return rowActions(...btns);
+}
+
+return { fields, syncReimbursement, quickAdd, markPaid, render };
+})();
+
+__m['cartoes'] = (() => {
+// Cartões, compras parceladas, faturas, mapa de parcelas futuras e importação em massa.
+const { h, fmt, todayISO, ymNow, ymAdd, ymDiff, ymShort, ymLabel, sum, uid, parseTable, parseMoney, parseYm } = __m['utils'];
+const { db, ui, add, update, remove, save } = __m['store'];
+const { monthInstallments, cardInvoice, futureInstallmentsTotal, monthSummary } = __m['calc'];
+const { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } = __m['ui'];
+
+// ---- Geração de parcelas de uma compra ----
+function generateInstallments(purchase) {
+  const total = Number(purchase.numParcelas) || 1;
+  const inicial = Number(purchase.parcelaInicial) || 1;
+  const valor = Number(purchase.valorParcela) || (Number(purchase.valorTotal) || 0) / total;
+  const out = [];
+  for (let n = inicial; n <= total; n++) {
+    out.push({
+      id: uid(),
+      purchaseId: purchase.id,
+      cartaoId: purchase.cartaoId,
+      numero: n,
+      total,
+      parcelaInicial: inicial,
+      valor,
+      mes: ymAdd(purchase.mesInicio, n - inicial),
+      status: 'previsto',
+    });
+  }
+  return out;
+}
+
+function purchaseFields() {
+  return [
+    { k: 'descricao', label: 'Descrição', type: 'text', required: true, full: true },
+    { k: 'dataCompra', label: 'Data da compra', type: 'date', value: todayISO() },
+    { k: 'categoria', label: 'Categoria', type: 'select', options: db.categoriesExpense.map(c => c.nome) },
+    { k: 'valorTotal', label: 'Valor total (R$)', type: 'money',
+      onchange: v => { if (v.valorTotal && v.numParcelas && !v._vpManual) v.valorParcela = +(v.valorTotal / v.numParcelas).toFixed(2); } },
+    { k: 'numParcelas', label: 'Quantidade de parcelas', type: 'number', required: true, min: 1, value: 1,
+      onchange: v => { if (v.valorTotal && v.numParcelas && !v._vpManual) v.valorParcela = +(v.valorTotal / v.numParcelas).toFixed(2); } },
+    { k: 'parcelaInicial', label: 'Número da parcela inicial', type: 'number', min: 1, value: 1,
+      help: 'Use > 1 para compras antigas já parcialmente pagas.' },
+    { k: 'valorParcela', label: 'Valor da parcela (R$)', type: 'money', required: true,
+      onchange: v => { v._vpManual = true; } },
+    { k: 'cartaoId', label: 'Cartão', type: 'select', options: db.cards.map(c => [c.id, c.nome]), required: true },
+    { k: 'mesInicio', label: 'Mês de início da cobrança', type: 'month', required: true, value: ymNow() },
+    { k: 'responsavel', label: 'Responsável pelo pagamento', type: 'text' },
+    { k: 'reembolsavel', label: 'Compra reembolsável', type: 'check' },
+    { k: 'obs', label: 'Observações', type: 'textarea', full: true },
+  ];
+}
+
+function savePurchase(vals, existingId) {
+  if (existingId) {
+    // Regerar parcelas mantendo status pago das já quitadas quando possível
+    db.installments = db.installments.filter(p => p.purchaseId !== existingId);
+    const purchase = update('purchases', existingId, vals);
+    db.installments.push(...generateInstallments(purchase));
+  } else {
+    const purchase = add('purchases', vals);
+    db.installments.push(...generateInstallments(purchase));
+  }
+  save();
+}
+
+// Avisos pós-cadastro: a compra deixa algum mês futuro negativo?
+function warnAfterPurchase(vals) {
+  const meses = Number(vals.numParcelas) - Number(vals.parcelaInicial || 1) + 1;
+  for (let i = 0; i < meses; i++) {
+    const m = ymAdd(vals.mesInicio, i);
+    if (monthSummary(m).saldoLivreReal < 0) {
+      toast(`Atenção: ${ymLabel(m)} ficou com saldo livre real negativo com essa compra.`);
+      return;
+    }
+  }
+  toast(`Compra parcelada cadastrada: ${meses} parcela(s) de ${fmt(vals.valorParcela)}.`);
+}
+
+function render(el, rerender) {
+  const ym = ui.month;
+
+  if (!db.cards.length) {
+    el.append(card('Comece cadastrando um cartão',
+      h('p', { class: 'stat-sub' }, 'Cadastre seus cartões de crédito para acompanhar faturas e distribuir parcelas automaticamente.'),
+      h('button', { class: 'btn btn-primary', onclick: () => addCard(rerender) }, '+ Cadastrar cartão')));
+  }
+
+  // ---- Faturas por cartão no mês ----
+  for (const c of db.cards.filter(c => c.ativo !== false)) {
+    const inv = cardInvoice(c.id, ym);
+    const pct = c.limitePlanejado > 0 ? inv.total / c.limitePlanejado * 100 : 0;
+    const meterColor = pct > 100 ? '#E57373' : pct > 80 ? '#F6C667' : '#7BC99A';
+    el.append(card(null,
+      h('div', { class: 'card-head' },
+        h('h2', { class: 'card-title' }, `💳 ${c.nome} · fatura de ${ymLabel(ym)}`),
+        rowActions(
+          ['✏️', () => editCard(c, rerender), 'Editar cartão'],
+          ['🗑', () => confirmModal(`Excluir o cartão "${c.nome}"? As compras e parcelas vinculadas também serão excluídas.`, () => {
+            db.purchases = db.purchases.filter(p => p.cartaoId !== c.id);
+            db.installments = db.installments.filter(p => p.cartaoId !== c.id);
+            remove('cards', c.id);
+            rerender();
+          }), 'Excluir cartão'])),
+      h('div', { class: 'grid grid-cards' },
+        statCard('Fatura prevista', inv.total, { sub: c.limitePlanejado ? `limite planejado: ${fmt(c.limitePlanejado)}` : '' }),
+        statCard('Compras novas do mês', inv.novas),
+        statCard('Parcelas herdadas', inv.herdadas),
+        statCard('Já pago', inv.pago, { tone: 'tone-ok' }),
+        statCard('Vencimento', `dia ${c.diaVencimento || '—'}`, { sub: c.diaFechamento ? `fecha dia ${c.diaFechamento}` : '' })),
+      c.limitePlanejado > 0 ? h('div', {},
+        h('div', { class: 'commit-meter' }, h('div', { style: `width:${Math.min(100, pct)}%;background:${meterColor}` })),
+        h('div', { class: 'stat-sub' }, `Sua fatura já atingiu ${pct.toFixed(0)}% do limite planejado para este mês.`)) : null,
+      inv.parcelas.length ? table([
+        { label: 'Descrição', render: p => db.purchases.find(x => x.id === p.purchaseId)?.descricao || '—' },
+        { label: 'Categoria', render: p => db.purchases.find(x => x.id === p.purchaseId)?.categoria || '—' },
+        { label: 'Parcela', render: p => `${p.numero}/${p.total}` },
+        { label: 'Valor', k: 'valor', money: true },
+        { label: 'Status', render: p => badge(p.status) },
+        { label: '', render: p => rowActions(
+            [p.status === 'pago' ? '↩︎' : '✔️', () => { update('installments', p.id, { status: p.status === 'pago' ? 'previsto' : 'pago' }); rerender(); }, p.status === 'pago' ? 'Desfazer pagamento' : 'Marcar como paga']), right: true },
+      ], inv.parcelas) : h('div', { class: 'empty-state' }, 'Nenhuma parcela neste mês.')));
+  }
+
+  // ---- Ações principais ----
+  el.append(card(null, h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
+    h('button', { class: 'btn btn-primary', onclick: () => formModal('Nova compra parcelada', purchaseFields(), {}, vals => {
+      savePurchase(vals);
+      warnAfterPurchase(vals);
+      rerender();
+    }, { wide: true }) }, '+ Nova compra parcelada'),
+    h('button', { class: 'btn btn-secondary', onclick: () => importModal(rerender) }, '⬆ Importar parcelamentos em massa'),
+    h('button', { class: 'btn btn-ghost', onclick: () => addCard(rerender) }, '+ Novo cartão'),
+    h('button', { class: 'btn btn-ghost', onclick: () => location.hash = '#/simulador' }, '🧮 Simular nova compra'))));
+
+  // ---- Compras parceladas cadastradas ----
+  const purchases = [...db.purchases].sort((a, b) => (b.mesInicio || '').localeCompare(a.mesInicio || ''));
+  el.append(card('Compras parceladas cadastradas',
+    table([
+      { label: 'Descrição', k: 'descricao' },
+      { label: 'Cartão', render: p => db.cards.find(c => c.id === p.cartaoId)?.nome || '—' },
+      { label: 'Categoria', k: 'categoria' },
+      { label: 'Parcelas', render: p => `${p.numParcelas}× de ${fmt(p.valorParcela || (p.valorTotal / p.numParcelas))}` },
+      { label: 'Início', render: p => ymShort(p.mesInicio) },
+      { label: 'Restante', render: p => fmt(sum(db.installments.filter(i => i.purchaseId === p.id && i.status !== 'pago' && ymDiff(i.mes, ym) >= 0), i => i.valor)), right: true },
+      { label: '', render: p => rowActions(
+          ['✏️', () => formModal('Editar compra parcelada', purchaseFields(), p, vals => { savePurchase(vals, p.id); rerender(); }, { wide: true }), 'Editar'],
+          ['🗑', () => confirmModal(`Excluir "${p.descricao}" e todas as suas parcelas?`, () => {
+            db.installments = db.installments.filter(i => i.purchaseId !== p.id);
+            remove('purchases', p.id);
+            rerender();
+          }), 'Excluir']), right: true },
+    ], purchases, { empty: 'Nenhuma compra parcelada. Use a importação em massa para carregar as existentes.' })));
+
+  // ---- Mapa de parcelamentos futuros ----
+  el.append(renderFutureMap(ym));
+}
+
+function renderFutureMap(ym) {
+  const horizon = 18;
+  const rows = [];
+  for (let i = 0; i < horizon; i++) {
+    const m = ymAdd(ym, i);
+    const parcelas = monthInstallments(m);
+    if (!parcelas.length) continue;
+    const totalMes = sum(parcelas, p => p.valor);
+    for (const p of parcelas) {
+      const compra = db.purchases.find(x => x.id === p.purchaseId);
+      rows.push({
+        mes: ymShort(m), cartao: db.cards.find(c => c.id === p.cartaoId)?.nome || '—',
+        descricao: compra?.descricao || '—', parcela: `${p.numero}/${p.total}`,
+        valor: p.valor, categoria: compra?.categoria || '—', status: p.status, totalMes,
+        _first: p === parcelas[0],
+      });
+    }
+  }
+  return card(`Mapa de parcelamentos futuros (${fmt(futureInstallmentsTotal(ymAdd(ym, -1)))} comprometidos a partir de ${ymLabel(ym)})`,
+    table([
+      { label: 'Mês', render: r => r._first ? h('b', {}, r.mes) : h('span', { style: 'color:var(--ink-2)' }, r.mes) },
+      { label: 'Cartão', k: 'cartao' },
+      { label: 'Descrição', k: 'descricao' },
+      { label: 'Parcela', k: 'parcela' },
+      { label: 'Valor', k: 'valor', money: true },
+      { label: 'Categoria', k: 'categoria' },
+      { label: 'Status', render: r => badge(r.status) },
+      { label: 'Total do mês', render: r => r._first ? h('b', {}, fmt(r.totalMes)) : '', right: true },
+    ], rows, { empty: 'Nenhuma parcela futura cadastrada.' }));
+}
+
+// ---- Cadastro de cartões ----
+function cardFields() {
+  return [
+    { k: 'nome', label: 'Nome do cartão', type: 'text', required: true },
+    { k: 'banco', label: 'Banco', type: 'select', options: db.banks.map(b => b.nome) },
+    { k: 'diaFechamento', label: 'Dia de fechamento', type: 'number', min: 1, max: 31 },
+    { k: 'diaVencimento', label: 'Dia de vencimento', type: 'number', min: 1, max: 31 },
+    { k: 'limitePlanejado', label: 'Limite planejado mensal (R$)', type: 'money', help: 'Quanto você quer gastar no máximo por fatura.' },
+    { k: 'obs', label: 'Observações', type: 'textarea', full: true },
+  ];
+}
+function addCard(rerender) {
+  formModal('Novo cartão', cardFields(), {}, vals => { add('cards', { ...vals, ativo: true }); rerender(); });
+}
+function editCard(c, rerender) {
+  formModal('Editar cartão', cardFields(), c, vals => { update('cards', c.id, vals); rerender(); });
+}
+
+// ---- Importação em massa ----
+const IMPORT_HEADERS = 'descricao;categoria;cartao;valor_parcela;parcela_atual;total_parcelas;mes_inicial;valor_total;responsavel;observacoes';
+const EXAMPLE = 'Notebook;Casa;Nubank;250,00;3;10;08/2026;2500,00;Suellen;compra da Magalu';
+
+function importModal(rerender) {
+  const ta = h('textarea', {
+    rows: 8, style: 'width:100%;font-family:monospace;font-size:12px',
+    placeholder: `${IMPORT_HEADERS}\n${EXAMPLE}`,
+  });
+  const fileInput = h('input', { type: 'file', accept: '.csv,.txt,.tsv' });
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files[0];
+    if (f) f.text().then(t => { ta.value = t; });
+  });
+  const result = h('div', { class: 'stat-sub', style: 'margin-top:8px' });
+
+  const overlay = modal('Importar parcelamentos em massa', h('div', {},
+    h('p', { class: 'stat-sub' },
+      'Cole a tabela (do Excel, Google Sheets ou CSV) ou envie um arquivo. A primeira linha deve conter os cabeçalhos. Separadores aceitos: ponto e vírgula, vírgula ou tabulação.'),
+    h('p', { class: 'stat-sub' }, 'Colunas reconhecidas: ', h('code', {}, IMPORT_HEADERS.replaceAll(';', ' · '))),
+    fileInput, h('div', { style: 'height:8px' }), ta, result,
+    h('div', { class: 'modal-actions' },
+      h('button', { class: 'btn btn-ghost', onclick: () => overlay.remove() }, 'Cancelar'),
+      h('button', { class: 'btn btn-primary', onclick: () => {
+        const res = importRows(ta.value);
+        if (res.error) { result.textContent = res.error; result.style.color = 'var(--erro)'; return; }
+        overlay.remove();
+        toast(`${res.count} parcelamento(s) importado(s) e somado(s) à coleção existente.`);
+        rerender();
+      } }, 'Importar'))), { wide: true });
+}
+
+function importRows(text) {
+  const { rows } = parseTable(text);
+  if (!rows.length) return { error: 'Nenhuma linha encontrada. Cole os dados com a linha de cabeçalho.' };
+  const col = (r, ...names) => {
+    for (const n of names) {
+      const key = Object.keys(r).find(k => k.replace(/[\s_-]/g, '') === n.replace(/[\s_-]/g, ''));
+      if (key && r[key] !== '') return r[key];
+    }
+    return '';
+  };
+  let count = 0;
+  const errors = [];
+  rows.forEach((r, idx) => {
+    const descricao = col(r, 'descricao', 'descrição', 'item');
+    const valorParcela = parseMoney(col(r, 'valor_parcela', 'valor da parcela', 'parcela_valor', 'valor'));
+    const totalParcelas = parseInt(col(r, 'total_parcelas', 'total de parcelas', 'parcelas', 'qtd_parcelas')) || 1;
+    const parcelaAtual = parseInt(col(r, 'parcela_atual', 'parcela atual', 'parcela')) || 1;
+    const mesInicial = parseYm(col(r, 'mes_inicial', 'mês inicial', 'mes_inicio', 'inicio')) || ymNow();
+    if (!descricao || !valorParcela) { errors.push(idx + 2); return; }
+    const cartaoNome = col(r, 'cartao', 'cartão');
+    let cartao = db.cards.find(c => c.nome.toLowerCase() === cartaoNome.toLowerCase());
+    if (!cartao && cartaoNome) cartao = add('cards', { nome: cartaoNome, banco: '', limitePlanejado: 0, ativo: true });
+    const purchase = add('purchases', {
+      descricao,
+      dataCompra: todayISO(),
+      categoria: col(r, 'categoria') || 'Outros',
+      valorTotal: parseMoney(col(r, 'valor_total', 'valor total')) || valorParcela * totalParcelas,
+      numParcelas: totalParcelas,
+      parcelaInicial: parcelaAtual,
+      valorParcela,
+      cartaoId: cartao?.id || '',
+      mesInicio: mesInicial,
+      responsavel: col(r, 'responsavel', 'responsável'),
+      reembolsavel: false,
+      obs: col(r, 'observacoes', 'observações', 'obs') + ' (importado em massa)',
+    });
+    db.installments.push(...generateInstallments(purchase));
+    count++;
+  });
+  save();
+  if (!count) return { error: `Nenhuma linha válida. Verifique descrição e valor da parcela (linhas: ${errors.join(', ')}).` };
+  return { count };
+}
+
+return { generateInstallments, render, addCard };
+})();
+
+__m['recorrentes'] = (() => {
+// Contas recorrentes: regra + ocorrências mensais editáveis individualmente.
+const { h, fmt, todayISO, ymNow, sum } = __m['utils'];
+const { db, ui, add, update, remove, save, PERIODICIDADES, FORMAS_PAGAMENTO } = __m['store'];
+const { recurringOccurrences } = __m['calc'];
+const { card, table, badge, formModal, confirmModal, rowActions, statCard, toast } = __m['ui'];
+
+function fields() {
+  return [
+    { k: 'nome', label: 'Nome da conta', type: 'text', required: true, placeholder: 'Ex.: Aluguel, Luz, Internet…' },
+    { k: 'categoria', label: 'Categoria', type: 'select', options: db.categoriesExpense.map(c => c.nome), required: true },
+    { k: 'valorPrevisto', label: 'Valor previsto (R$)', type: 'money', required: true },
+    { k: 'diaVencimento', label: 'Dia de vencimento', type: 'number', min: 1, max: 31, required: true },
+    { k: 'periodicidade', label: 'Periodicidade', type: 'select', options: PERIODICIDADES.map(p => [p[0], p[1]]), value: 'mensal', required: true },
+    { k: 'dataInicio', label: 'Mês de início', type: 'month', value: ymNow(), required: true },
+    { k: 'dataFim', label: 'Mês de fim (opcional)', type: 'month', help: 'Deixe vazio para contas sem prazo (útil para financiamentos com fim definido).' },
+    { k: 'formaPagamento', label: 'Forma de pagamento', type: 'select', options: FORMAS_PAGAMENTO },
+    { k: 'banco', label: 'Banco', type: 'select', options: db.banks.map(b => b.nome) },
+    { k: 'obs', label: 'Observações', type: 'textarea', full: true },
+  ];
+}
+
+function render(el, rerender) {
+  const ym = ui.month;
+  const occs = recurringOccurrences(ym);
+
+  el.append(h('div', { class: 'grid grid-cards' },
+    statCard('Total do mês', sum(occs, o => o.valor)),
+    statCard('Pagas', sum(occs.filter(o => o.status === 'pago'), o => o.valor), { tone: 'tone-ok' }),
+    statCard('Em aberto', sum(occs.filter(o => o.status !== 'pago'), o => o.valor)),
+    statCard('Vencidas', sum(occs.filter(o => o.status === 'vencido'), o => o.valor),
+      { tone: occs.some(o => o.status === 'vencido') ? 'tone-bad' : '' })));
+
+  // Ocorrências do mês
+  el.append(card(null,
+    h('div', { class: 'card-head' },
+      h('h2', { class: 'card-title' }, 'Ocorrências do mês'),
+      h('button', { class: 'btn btn-primary btn-sm', onclick: () =>
+        formModal('Nova conta recorrente', fields(), {}, vals => { add('recurring', { ...vals, status: 'ativa' }); rerender(); }) }, '+ Nova conta recorrente')),
+    table([
+      { label: 'Vencimento', k: 'dataVencimento', date: true },
+      { label: 'Conta', k: 'nome' },
+      { label: 'Categoria', k: 'categoria' },
+      { label: 'Valor', k: 'valor', money: true },
+      { label: 'Status', render: o => badge(o.status) },
+      { label: '', render: o => occActions(o, rerender), right: true },
+    ], occs, { empty: 'Nenhuma conta recorrente neste mês.' })));
+
+  // Regras cadastradas
+  el.append(card('Contas recorrentes cadastradas',
+    table([
+      { label: 'Conta', k: 'nome' },
+      { label: 'Categoria', k: 'categoria' },
+      { label: 'Valor previsto', k: 'valorPrevisto', money: true },
+      { label: 'Vence dia', k: 'diaVencimento' },
+      { label: 'Periodicidade', render: r => PERIODICIDADES.find(p => p[0] === r.periodicidade)?.[1] || r.periodicidade },
+      { label: 'Vigência', render: r => `${r.dataInicio || '—'} → ${r.dataFim || 'sem fim'}` },
+      { label: 'Status', render: r => badge(r.status) },
+      { label: '', render: r => rowActions(
+          [r.status === 'ativa' ? '⏸' : '▶️', () => { update('recurring', r.id, { status: r.status === 'ativa' ? 'pausada' : 'ativa' }); rerender(); }, r.status === 'ativa' ? 'Pausar' : 'Reativar'],
+          ['✏️', () => formModal('Editar conta recorrente', fields(), r, vals => { update('recurring', r.id, vals); rerender(); }), 'Editar'],
+          ['🗑', () => confirmModal(`Excluir a conta recorrente "${r.nome}"?`, () => { remove('recurring', r.id); rerender(); }), 'Excluir']), right: true },
+    ], db.recurring, { empty: 'Nenhuma conta recorrente cadastrada. Comece pelo aluguel, condomínio, luz e assinaturas.' })));
+}
+
+function occActions(o, rerender) {
+  const key = o.key;
+  const setOcc = patch => {
+    db.recurringOcc[key] = { ...(db.recurringOcc[key] || {}), ...patch };
+    save();
+    rerender();
+  };
+  const btns = [];
+  if (o.status !== 'pago') {
+    btns.push(['✔️', () => setOcc({ status: 'pago', dataPagamento: todayISO() }), 'Marcar como paga']);
+  } else {
+    btns.push(['↩︎', () => setOcc({ status: 'previsto', dataPagamento: '' }), 'Desfazer pagamento']);
+  }
+  btns.push(['✏️', () => {
+    // Edita apenas a ocorrência do mês, sem alterar a regra original.
+    formModal(`Editar apenas ${o.nome} deste mês`, [
+      { k: 'valor', label: 'Valor deste mês (R$)', type: 'money', required: true, help: 'Altera só este mês; a regra recorrente continua igual.' },
+      { k: 'status', label: 'Status', type: 'select', required: true,
+        options: [['previsto', 'Previsto'], ['pago', 'Pago'], ['parcial', 'Parcialmente pago'], ['cancelado', 'Cancelado neste mês']] },
+      { k: 'dataPagamento', label: 'Data de pagamento', type: 'date', show: v => v.status === 'pago' || v.status === 'parcial' },
+    ], { valor: o.valor, status: o.status === 'vencido' ? 'previsto' : o.status, dataPagamento: o.dataPagamento }, vals => {
+      setOcc(vals);
+      toast('Ocorrência atualizada só neste mês.');
+    });
+  }, 'Editar este mês']);
+  return rowActions(...btns);
+}
+
+return { render };
+})();
+
+__m['provisoes'] = (() => {
+// Provisões: reservas mensais para despesas futuras previsíveis.
+const { h, fmt, ymNow, ymLabel, ymDiff, sum, todayISO } = __m['utils'];
+const { db, ui, add, update, remove } = __m['store'];
+const { provisionMonthly, monthProvisions, monthProvisionDeposits } = __m['calc'];
+const { card, table, badge, formModal, confirmModal, rowActions, statCard, toast } = __m['ui'];
+
+function fields() {
+  return [
+    { k: 'nome', label: 'Nome da provisão', type: 'text', required: true, placeholder: 'Ex.: IPVA, Seguro do carro, Viagem…' },
+    { k: 'categoria', label: 'Categoria', type: 'select', options: db.categoriesExpense.map(c => c.nome) },
+    { k: 'valorAlvo', label: 'Valor alvo (R$)', type: 'money', required: true },
+    { k: 'dataAlvo', label: 'Data alvo', type: 'month', required: true },
+    { k: 'valorMensal', label: 'Valor mensal (R$, opcional)', type: 'money',
+      help: 'Se vazio, o app calcula automaticamente quanto guardar por mês até a data alvo.' },
+    { k: 'valorAcumulado', label: 'Valor já provisionado (R$)', type: 'money', value: 0 },
+    { k: 'obs', label: 'Observações', type: 'textarea', full: true },
+  ];
+}
+
+function render(el, rerender) {
+  const ym = ui.month;
+  const ativas = db.provisions.filter(p => p.status === 'ativa');
+
+  el.append(h('div', { class: 'grid grid-cards' },
+    statCard('Provisão mensal necessária', monthProvisions(ym), { sub: 'impacta o saldo livre real' }),
+    statCard('Guardado neste mês', monthProvisionDeposits(ym), { tone: 'tone-ok' }),
+    statCard('Total já provisionado', sum(db.provisions, p => p.valorAcumulado)),
+    statCard('Provisões ativas', String(ativas.length))));
+
+  el.append(card(null,
+    h('div', { class: 'card-head' },
+      h('h2', { class: 'card-title' }, 'Suas provisões'),
+      h('button', { class: 'btn btn-primary btn-sm', onclick: () =>
+        formModal('Nova provisão', fields(), {}, vals => {
+          add('provisions', { ...vals, status: 'ativa' });
+          const mensal = provisionMonthly({ ...vals, status: 'ativa' }, ym);
+          toast(`Provisão criada. Sugestão: guarde ${fmt(mensal)} por mês até ${ymLabel(vals.dataAlvo)}.`);
+          rerender();
+        }) }, '+ Nova provisão')),
+    table([
+      { label: 'Provisão', k: 'nome' },
+      { label: 'Alvo', render: p => `${fmt(p.valorAlvo)} até ${p.dataAlvo ? ymLabel(p.dataAlvo) : '—'}` },
+      { label: 'Mensal sugerido', render: p => fmt(provisionMonthly(p, ym)), right: true },
+      { label: 'Acumulado', render: p => {
+          const pct = p.valorAlvo > 0 ? Math.min(100, (p.valorAcumulado / p.valorAlvo) * 100) : 0;
+          return h('div', { style: 'min-width:130px' },
+            h('div', {}, `${fmt(p.valorAcumulado)} (${pct.toFixed(0)}%)`),
+            h('div', { class: 'commit-meter', style: 'margin:4px 0 0' },
+              h('div', { style: `width:${pct}%;background:${pct >= 100 ? '#7BC99A' : '#BFE8D5'}` })));
+        } },
+      { label: 'Status', render: p => {
+          const atrasada = p.status === 'ativa' && p.dataAlvo && ymDiff(p.dataAlvo, ym) >= 0 &&
+            p.valorAcumulado < esperadoAte(p, ym);
+          return atrasada ? badge('atrasado') : badge(p.status);
+        } },
+      { label: '', render: p => rowActions(
+          ['💰', () => depositModal(p, rerender), 'Registrar valor guardado'],
+          ['✏️', () => formModal('Editar provisão', fields(), p, vals => { update('provisions', p.id, vals); rerender(); }), 'Editar'],
+          [p.status === 'ativa' ? '⏸' : '▶️', () => { update('provisions', p.id, { status: p.status === 'ativa' ? 'pausada' : 'ativa' }); rerender(); }, p.status === 'ativa' ? 'Pausar' : 'Reativar'],
+          ['🗑', () => confirmModal(`Excluir a provisão "${p.nome}"?`, () => { remove('provisions', p.id); rerender(); }), 'Excluir']), right: true },
+    ], db.provisions, { empty: 'Nenhuma provisão. Crie provisões para IPVA, seguro, viagens e presentes — assim nada vira surpresa.' })));
+}
+
+// Quanto deveria estar acumulado até este mês, mantendo o ritmo sugerido.
+function esperadoAte(p, ym) {
+  if (!p.dataAlvo) return 0;
+  const restantes = Math.max(0, ymDiff(p.dataAlvo, ym));
+  const mensal = provisionMonthly(p, ym);
+  return Math.max(0, p.valorAlvo - mensal * restantes);
+}
+
+function depositModal(p, rerender) {
+  formModal(`Guardar para "${p.nome}"`, [
+    { k: 'valor', label: 'Valor guardado (R$)', type: 'money', required: true, value: Math.round(provisionMonthly(p, ui.month) * 100) / 100 },
+    { k: 'mes', label: 'Mês', type: 'month', required: true, value: ui.month },
+  ], {}, vals => {
+    add('provisionDeposits', { provisaoId: p.id, mes: vals.mes, valor: vals.valor });
+    const novoAcumulado = (Number(p.valorAcumulado) || 0) + vals.valor;
+    update('provisions', p.id, {
+      valorAcumulado: novoAcumulado,
+      status: novoAcumulado >= p.valorAlvo ? 'concluida' : p.status,
+    });
+    toast(novoAcumulado >= p.valorAlvo ? 'Provisão concluída! 🎉' : 'Valor registrado na provisão.');
+    rerender();
+  }, { saveLabel: 'Registrar' });
+}
+
+return { render };
+})();
+
+__m['investimentos'] = (() => {
+// Investimentos: carteira por banco e produto, aportes e meta de reserva.
+const { h, fmt, todayISO, ymOf, sum } = __m['utils'];
+const { db, ui, add, update, remove, TIPOS_INVESTIMENTO, OBJETIVOS_INVESTIMENTO } = __m['store'];
+const { totalInvested, reserveTotal, monthInvestDone, monthInvestPlanned } = __m['calc'];
+const { card, table, formModal, confirmModal, rowActions, statCard, toast, alertBanner } = __m['ui'];
+const { donut } = __m['charts'];
+
+function fields() {
+  return [
+    { k: 'banco', label: 'Banco ou corretora', type: 'select', options: db.banks.map(b => b.nome), required: true },
+    { k: 'produto', label: 'Produto', type: 'text', required: true, placeholder: 'Ex.: CDB 110% CDI, Tesouro Selic…' },
+    { k: 'tipo', label: 'Tipo de investimento', type: 'select', options: TIPOS_INVESTIMENTO, required: true },
+    { k: 'objetivo', label: 'Objetivo', type: 'select', options: OBJETIVOS_INVESTIMENTO },
+    { k: 'valorAtual', label: 'Valor atual (R$)', type: 'money', required: true },
+    { k: 'aporteMensalPlanejado', label: 'Aporte mensal planejado (R$)', type: 'money', value: 0 },
+    { k: 'rentabilidade', label: 'Rentabilidade (se souber)', type: 'text', placeholder: 'Ex.: 110% CDI, IPCA+6%' },
+    { k: 'liquidez', label: 'Liquidez', type: 'select', options: ['Diária', 'D+30', 'No vencimento', 'Baixa'] },
+    { k: 'obs', label: 'Observações', type: 'textarea', full: true },
+  ];
+}
+
+function render(el, rerender) {
+  const ym = ui.month;
+  const reserva = reserveTotal();
+  const metaMin = Number(db.settings.metaReservaMin) || 0;
+  const planejado = monthInvestPlanned();
+  const realizado = monthInvestDone(ym);
+
+  if (metaMin > 0 && reserva < metaMin) {
+    el.append(alertBanner([{ level: 'aviso', msg: `Sua reserva (${fmt(reserva)}) está abaixo da meta mínima definida (${fmt(metaMin)}).` }]));
+  }
+
+  el.append(h('div', { class: 'grid grid-cards' },
+    statCard('Total investido', totalInvested(), { tone: 'tone-accent' }),
+    statCard('Reserva de emergência', reserva, {
+      sub: metaMin ? `meta: ${fmt(metaMin)}${db.settings.metaReservaMax ? ' – ' + fmt(db.settings.metaReservaMax) : ''} (${metaMin ? Math.min(999, Math.round(reserva / metaMin * 100)) : 0}%)` : 'defina a meta em Configurações',
+      tone: metaMin && reserva < metaMin ? 'tone-warn' : 'tone-ok',
+    }),
+    statCard('Aporte planejado / mês', planejado),
+    statCard('Aporte realizado no mês', realizado, {
+      tone: realizado >= planejado && planejado > 0 ? 'tone-ok' : realizado < planejado ? 'tone-warn' : '',
+      sub: planejado > 0 ? `${Math.round(realizado / planejado * 100)}% do planejado` : '',
+    })));
+
+  // Distribuição por banco e por tipo
+  const porBanco = agrupa(i => i.banco);
+  const porTipo = agrupa(i => i.tipo);
+  if (db.investments.length) {
+    el.append(h('div', { class: 'grid grid-2' },
+      card('Total por banco', donut(porBanco, { size: 170 })),
+      card('Total por tipo de produto', donut(porTipo, { size: 170 }))));
+  }
+
+  el.append(card(null,
+    h('div', { class: 'card-head' },
+      h('h2', { class: 'card-title' }, 'Sua carteira'),
+      h('button', { class: 'btn btn-primary btn-sm', onclick: () =>
+        formModal('Novo investimento', fields(), {}, vals => { add('investments', vals); rerender(); }) }, '+ Novo investimento')),
+    table([
+      { label: 'Banco', k: 'banco' },
+      { label: 'Produto', k: 'produto' },
+      { label: 'Tipo', k: 'tipo' },
+      { label: 'Objetivo', k: 'objetivo' },
+      { label: 'Valor atual', k: 'valorAtual', money: true },
+      { label: 'Aporte/mês', k: 'aporteMensalPlanejado', money: true },
+      { label: 'Liquidez', k: 'liquidez' },
+      { label: '', render: i => rowActions(
+          ['💰', () => aporteModal(i, rerender), 'Registrar aporte'],
+          ['✏️', () => formModal('Editar investimento', fields(), i, vals => { update('investments', i.id, vals); rerender(); }), 'Editar'],
+          ['🗑', () => confirmModal(`Excluir o investimento "${i.produto}"?`, () => { remove('investments', i.id); rerender(); }), 'Excluir']), right: true },
+    ], db.investments, { empty: 'Nenhum investimento cadastrado. Separe o dinheiro investido do disponível para ver sua evolução patrimonial.' })));
+
+  // Aportes do mês
+  const aportes = db.investContrib.filter(c => ymOf(c.data) === ym);
+  if (aportes.length) {
+    el.append(card('Aportes registrados no mês',
+      table([
+        { label: 'Data', k: 'data', date: true },
+        { label: 'Investimento', render: a => { const i = db.investments.find(x => x.id === a.investimentoId); return i ? `${i.banco} · ${i.produto}` : '—'; } },
+        { label: 'Valor', k: 'valor', money: true },
+        { label: '', render: a => rowActions(['🗑', () => confirmModal('Excluir este aporte? O valor será estornado do investimento.', () => {
+            const inv = db.investments.find(x => x.id === a.investimentoId);
+            if (inv) update('investments', inv.id, { valorAtual: (Number(inv.valorAtual) || 0) - a.valor });
+            remove('investContrib', a.id);
+            rerender();
+          }), 'Excluir']), right: true },
+      ], aportes)));
+  }
+}
+
+function agrupa(keyFn) {
+  const map = {};
+  for (const i of db.investments) {
+    const k = keyFn(i) || 'Outros';
+    map[k] = (map[k] || 0) + (Number(i.valorAtual) || 0);
+  }
+  return Object.entries(map).sort((a, b) => b[1] - a[1]);
+}
+
+function aporteModal(inv, rerender) {
+  formModal(`Aporte em ${inv.produto}`, [
+    { k: 'valor', label: 'Valor do aporte (R$)', type: 'money', required: true, value: inv.aporteMensalPlanejado || '' },
+    { k: 'data', label: 'Data', type: 'date', required: true, value: todayISO() },
+  ], {}, vals => {
+    add('investContrib', { investimentoId: inv.id, data: vals.data, valor: vals.valor });
+    update('investments', inv.id, { valorAtual: (Number(inv.valorAtual) || 0) + vals.valor });
+    toast('Aporte registrado.');
+    rerender();
+  }, { saveLabel: 'Registrar aporte' });
+}
+
+return { render };
+})();
+
+__m['reembolsos'] = (() => {
+// Reembolsos: resumo por pessoa, detalhe, recebimento parcial e mensagem para WhatsApp.
+const { h, fmt, fmtDate, todayISO, sum } = __m['utils'];
+const { db, add, update, remove, save, STATUS_REEMBOLSO, CRITERIOS_DIVISAO, FORMAS_PAGAMENTO } = __m['store'];
+const { reimbPending, reimbOutstanding } = __m['calc'];
+const { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } = __m['ui'];
+
+let pessoaSelecionada = null;
+
+function fields(vals = {}) {
+  return [
+    { k: 'data', label: 'Data da despesa', type: 'date', required: true, value: todayISO() },
+    { k: 'descricao', label: 'Descrição', type: 'text', required: true },
+    { k: 'valorTotalDespesa', label: 'Valor total da despesa (R$)', type: 'money', required: true,
+      onchange: v => recalc(v) },
+    { k: 'categoria', label: 'Categoria', type: 'select', options: db.categoriesExpense.map(c => c.nome) },
+    { k: 'formaPagamento', label: 'Forma de pagamento', type: 'select', options: FORMAS_PAGAMENTO },
+    { k: 'pessoaId', label: 'Pessoa responsável pelo reembolso', type: 'select', required: true,
+      options: db.people.map(p => [p.id, p.nome]),
+      help: db.people.length ? '' : 'Cadastre pessoas em Configurações → Pessoas.' },
+    { k: 'criterio', label: 'Critério de divisão', type: 'select', options: CRITERIOS_DIVISAO, value: 'fixo', required: true,
+      onchange: v => recalc(v) },
+    { k: 'percentual', label: 'Percentual (%)', type: 'number', min: 0, max: 100,
+      show: v => v.criterio === 'percentual', onchange: v => recalc(v) },
+    { k: 'valorAReembolsar', label: 'Valor a reembolsar (R$)', type: 'money', required: true },
+    { k: 'status', label: 'Status', type: 'select', options: STATUS_REEMBOLSO, value: 'pendente', required: true },
+    { k: 'comprovante', label: 'Comprovante (nome ou link)', type: 'text' },
+    { k: 'obs', label: 'Observações', type: 'textarea', full: true },
+  ];
+}
+
+function recalc(v) {
+  const total = Number(v.valorTotalDespesa) || 0;
+  if (v.criterio === 'integral') v.valorAReembolsar = total;
+  else if (v.criterio === 'igual') v.valorAReembolsar = +(total / 2).toFixed(2);
+  else if (v.criterio === 'percentual') v.valorAReembolsar = +(total * (Number(v.percentual) || 0) / 100).toFixed(2);
+}
+
+function render(el, rerender) {
+  if (pessoaSelecionada) return renderPessoa(el, rerender);
+
+  const ativos = db.reimbursements.filter(r => !['cancelado'].includes(r.status));
+  el.append(h('div', { class: 'grid grid-cards' },
+    statCard('Total a receber', reimbOutstanding(), { tone: reimbOutstanding() > 0 ? 'tone-warn' : 'tone-ok' }),
+    statCard('Pendentes', sum(ativos.filter(r => r.status === 'pendente'), reimbPending)),
+    statCard('Solicitados', sum(ativos.filter(r => r.status === 'solicitado'), reimbPending)),
+    statCard('Recebido no total', sum(db.reimbursements, r => r.valorRecebido), { tone: 'tone-ok' })));
+
+  // Resumo por pessoa
+  const porPessoa = db.people.map(p => {
+    const items = ativos.filter(r => r.pessoaId === p.id);
+    return {
+      pessoa: p,
+      pendente: sum(items.filter(r => ['pendente', 'atrasado'].includes(r.status)), reimbPending),
+      solicitado: sum(items.filter(r => r.status === 'solicitado'), reimbPending),
+      parcial: sum(items.filter(r => r.status === 'parcial'), reimbPending),
+      pago: sum(items.filter(r => r.status === 'pago'), r => r.valorRecebido),
+      ultimaSolicitacao: items.map(r => r.dataSolicitacao).filter(Boolean).sort().pop() || '',
+      total: sum(items.filter(r => ['pendente', 'solicitado', 'parcial', 'atrasado'].includes(r.status)), reimbPending),
+      count: items.length,
+    };
+  }).filter(x => x.count > 0);
+
+  el.append(card(null,
+    h('div', { class: 'card-head' },
+      h('h2', { class: 'card-title' }, 'Resumo de reembolsos por pessoa'),
+      h('div', { style: 'display:flex;gap:8px' },
+        h('button', { class: 'btn btn-primary btn-sm', onclick: () => novaDespesaReembolsavel(rerender) }, '+ Despesa reembolsável'),
+        h('button', { class: 'btn btn-ghost btn-sm', onclick: () => location.hash = '#/config' }, '👤 Gerenciar pessoas'))),
+    table([
+      { label: 'Pessoa', render: x => h('a', { href: '#', onclick: e => { e.preventDefault(); pessoaSelecionada = x.pessoa.id; rerender(); } }, h('b', {}, x.pessoa.nome)) },
+      { label: 'Pendente', render: x => fmt(x.pendente), right: true },
+      { label: 'Solicitado', render: x => fmt(x.solicitado), right: true },
+      { label: 'Parcial', render: x => fmt(x.parcial), right: true },
+      { label: 'Total a receber', render: x => h('b', {}, fmt(x.total)), right: true },
+      { label: 'Última solicitação', render: x => x.ultimaSolicitacao ? fmtDate(x.ultimaSolicitacao) : '—' },
+      { label: '', render: x => h('button', { class: 'btn btn-secondary btn-sm', onclick: () => messageModal(x.pessoa) }, '💬 Gerar mensagem'), right: true },
+    ], porPessoa, { empty: 'Nenhum reembolso registrado. Marque despesas como reembolsáveis ou cadastre aqui direto.' })));
+
+  el.append(renderLista(ativos, rerender, 'Todos os reembolsos em aberto'));
+}
+
+function renderPessoa(el, rerender) {
+  const p = db.people.find(x => x.id === pessoaSelecionada);
+  if (!p) { pessoaSelecionada = null; return rerender(); }
+  const items = db.reimbursements.filter(r => r.pessoaId === p.id);
+  const aberto = sum(items.filter(r => ['pendente', 'solicitado', 'parcial', 'atrasado'].includes(r.status)), reimbPending);
+
+  el.append(h('div', { class: 'topbar' },
+    h('button', { class: 'btn btn-ghost btn-sm', onclick: () => { pessoaSelecionada = null; rerender(); } }, '← Voltar'),
+    h('button', { class: 'btn btn-secondary btn-sm', onclick: () => messageModal(p) }, '💬 Gerar mensagem')));
+
+  el.append(h('div', { class: 'grid grid-cards' },
+    statCard(`A receber de ${p.nome}`, aberto, { tone: aberto > 0 ? 'tone-warn' : 'tone-ok' }),
+    statCard('Já recebido', sum(items, r => r.valorRecebido), { tone: 'tone-ok' }),
+    statCard('Lançamentos', String(items.length))));
+
+  el.append(renderLista(items, rerender, `Histórico de ${p.nome}`));
+}
+
+function renderLista(items, rerender, title) {
+  const sorted = [...items].sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+  return card(title, table([
+    { label: 'Data', k: 'data', date: true },
+    { label: 'Descrição', k: 'descricao' },
+    { label: 'Pessoa', render: r => db.people.find(p => p.id === r.pessoaId)?.nome || '—' },
+    { label: 'Despesa total', k: 'valorTotalDespesa', money: true },
+    { label: 'A reembolsar', k: 'valorAReembolsar', money: true },
+    { label: 'Recebido', k: 'valorRecebido', money: true },
+    { label: 'Pendente', render: r => h(reimbPending(r) > 0 ? 'b' : 'span', {}, fmt(reimbPending(r))), right: true },
+    { label: 'Status', render: r => badge(r.status) },
+    { label: '', render: r => actions(r, rerender), right: true },
+  ], sorted, { empty: 'Nenhum reembolso.' }));
+}
+
+function actions(r, rerender) {
+  const btns = [];
+  if (['pendente', 'atrasado'].includes(r.status)) {
+    btns.push(['📨', () => { update('reimbursements', r.id, { status: 'solicitado', dataSolicitacao: todayISO() }); toast('Marcado como solicitado.'); rerender(); }, 'Marcar como solicitado']);
+  }
+  if (reimbPending(r) > 0 && !['cancelado', 'contestado'].includes(r.status)) {
+    btns.push(['💵', () => receberModal(r, rerender), 'Registrar recebimento']);
+  }
+  btns.push(
+    ['✏️', () => formModal('Editar reembolso', fields(), r, vals => { update('reimbursements', r.id, vals); rerender(); }, { wide: true }), 'Editar'],
+    ['🗑', () => confirmModal(`Excluir o reembolso "${r.descricao}"?`, () => { remove('reimbursements', r.id); rerender(); }), 'Excluir']);
+  return rowActions(...btns);
+}
+
+function receberModal(r, rerender) {
+  formModal(`Receber de ${db.people.find(p => p.id === r.pessoaId)?.nome || ''}`, [
+    { k: 'valor', label: `Valor recebido (pendente: ${fmt(reimbPending(r))})`, type: 'money', required: true, value: reimbPending(r) },
+    { k: 'data', label: 'Data do recebimento', type: 'date', required: true, value: todayISO() },
+  ], {}, vals => {
+    const recebido = (Number(r.valorRecebido) || 0) + vals.valor;
+    const quitado = recebido >= Number(r.valorAReembolsar) - 0.005;
+    update('reimbursements', r.id, {
+      valorRecebido: recebido,
+      dataRecebimento: vals.data,
+      status: quitado ? 'pago' : 'parcial',
+    });
+    // Reembolso recebido abate a despesa original (não vira receita livre).
+    if (quitado && r.expenseId) {
+      const exp = db.expenses.find(e => e.id === r.expenseId);
+      if (exp && exp.status === 'pago') update('expenses', exp.id, { status: 'reembolsado' });
+    }
+    toast(quitado ? 'Reembolso quitado e abatido da despesa original.' : 'Recebimento parcial registrado.');
+    rerender();
+  }, { saveLabel: 'Registrar recebimento' });
+}
+
+function novaDespesaReembolsavel(rerender) {
+  if (!db.people.length) {
+    toast('Cadastre primeiro as pessoas em Configurações.');
+    location.hash = '#/config';
+    return;
+  }
+  formModal('Nova despesa reembolsável', fields(), {}, vals => {
+    add('reimbursements', { ...vals, valorRecebido: 0, dataSolicitacao: '', dataRecebimento: '' });
+    rerender();
+  }, { wide: true });
+}
+
+// ---- Mensagem para WhatsApp ----
+function messageModal(pessoa) {
+  const items = db.reimbursements
+    .filter(r => r.pessoaId === pessoa.id && ['pendente', 'solicitado', 'parcial', 'atrasado'].includes(r.status) && reimbPending(r) > 0)
+    .sort((a, b) => (a.data || '').localeCompare(b.data || ''));
+  const total = sum(items, reimbPending);
+
+  const resumida = `Oi! Fechando aqui os valores pendentes, ficou ${fmt(total)} para me reembolsar.`;
+  const detalhada = `${resumida}\n\nDetalhamento:\n${items.map(r => `${fmtDate(r.data)}, ${r.descricao}: ${fmt(reimbPending(r))}`).join('\n')}\n\nTotal: ${fmt(total)}.`;
+
+  const ta = h('textarea', { rows: 10, style: 'width:100%;font-size:13px' }, resumida);
+  let modo = 'resumida';
+  const setModo = m => { modo = m; ta.value = m === 'resumida' ? resumida : detalhada; btnR.className = `btn btn-sm ${m === 'resumida' ? 'btn-primary' : 'btn-ghost'}`; btnD.className = `btn btn-sm ${m === 'detalhada' ? 'btn-primary' : 'btn-ghost'}`; };
+  const btnR = h('button', { class: 'btn btn-sm btn-primary', onclick: () => setModo('resumida') }, 'Resumida');
+  const btnD = h('button', { class: 'btn btn-sm btn-ghost', onclick: () => setModo('detalhada') }, 'Detalhada');
+
+  const overlay = modal(`Mensagem para ${pessoa.nome}`, h('div', {},
+    total <= 0 ? h('p', { class: 'stat-sub' }, 'Não há valores pendentes para esta pessoa. 🎉') : null,
+    h('div', { style: 'display:flex;gap:8px;margin-bottom:10px' }, btnR, btnD),
+    ta,
+    h('div', { class: 'modal-actions' },
+      pessoa.contato ? h('a', {
+        class: 'btn btn-secondary',
+        href: `https://wa.me/${String(pessoa.contato).replace(/\D/g, '')}?text=${encodeURIComponent(ta.value)}`,
+        target: '_blank', rel: 'noopener',
+      }, '📱 Abrir no WhatsApp') : null,
+      h('button', { class: 'btn btn-primary', onclick: () => {
+        navigator.clipboard.writeText(ta.value).then(() => toast('Mensagem copiada.'));
+      } }, '📋 Copiar mensagem'))));
+}
+
+return { render };
+})();
+
+__m['calendario'] = (() => {
+// Calendário financeiro: tudo que acontece no mês, dia a dia.
+const { h, fmt, fmtDate, daysInMonth, dateInMonth, todayISO, daysUntil, sum } = __m['utils'];
+const { db, ui } = __m['store'];
+const { monthIncomes, monthExpenses, recurringOccurrences, cardInvoice, monthReimbursements, reimbPending, provisionMonthly } = __m['calc'];
+const { card, modal, badge, alertBanner, table } = __m['ui'];
+
+const TIPOS = {
+  receita: { icon: '💰', bg: '#E3F5EB' },
+  despesa: { icon: '🧾', bg: '#F4D6DA' },
+  recorrente: { icon: '🔁', bg: '#EDE3D4' },
+  fatura: { icon: '💳', bg: '#D9CCF2' },
+  provisao: { icon: '🏦', bg: '#EEF1F4' },
+  investimento: { icon: '📈', bg: '#C9E7F6' },
+  reembolso: { icon: '🤝', bg: '#FCF3DD' },
+};
+
+function eventsFor(ym) {
+  const ev = [];
+  for (const i of monthIncomes(ym)) {
+    ev.push({ tipo: 'receita', data: i.data, titulo: i.descricao, valor: i.valor, status: i.status });
+  }
+  for (const e of monthExpenses(ym)) {
+    const venc = e.dataVencimento || e.dataCompra;
+    const status = e.status === 'previsto' && daysUntil(venc) < 0 ? 'vencido' : e.status;
+    ev.push({ tipo: 'despesa', data: venc, titulo: e.descricao, valor: e.valorTotal, status });
+  }
+  for (const o of recurringOccurrences(ym)) {
+    ev.push({ tipo: 'recorrente', data: o.dataVencimento, titulo: o.nome, valor: o.valor, status: o.status });
+  }
+  for (const c of db.cards.filter(c => c.ativo !== false && c.diaVencimento)) {
+    const inv = cardInvoice(c.id, ym);
+    if (inv.total > 0) {
+      ev.push({ tipo: 'fatura', data: dateInMonth(ym, Number(c.diaVencimento)), titulo: `Fatura ${c.nome}`, valor: inv.total, status: inv.pago >= inv.total ? 'pago' : 'previsto' });
+    }
+  }
+  const prov = sum(db.provisions, p => provisionMonthly(p, ym));
+  if (prov > 0) ev.push({ tipo: 'provisao', data: dateInMonth(ym, 1), titulo: 'Provisões do mês', valor: prov, status: 'previsto' });
+  const aportes = sum(db.investments, i => i.aporteMensalPlanejado);
+  if (aportes > 0) ev.push({ tipo: 'investimento', data: dateInMonth(ym, 1), titulo: 'Aportes planejados', valor: aportes, status: 'previsto' });
+  for (const r of monthReimbursements(ym)) {
+    if (reimbPending(r) > 0) {
+      ev.push({ tipo: 'reembolso', data: r.data, titulo: `Reembolso: ${r.descricao}`, valor: reimbPending(r), status: r.status });
+    }
+  }
+  return ev;
+}
+
+function render(el, rerender) {
+  const ym = ui.month;
+  const events = eventsFor(ym);
+  const hoje = todayISO();
+
+  // Alertas de proximidade
+  const alerts = [];
+  for (const e of events) {
+    if (['pago', 'recebida', 'cancelado'].includes(e.status)) continue;
+    const d = daysUntil(e.data);
+    const nome = `${TIPOS[e.tipo].icon} ${e.titulo} (${fmt(e.valor)})`;
+    if (e.status === 'vencido' || (d < 0 && ['previsto', 'prevista', 'pendente'].includes(e.status) && e.tipo !== 'reembolso')) {
+      alerts.push({ level: 'erro', msg: `${nome} está vencido desde ${fmtDate(e.data)}.` });
+    } else if (d === 0) alerts.push({ level: 'aviso', msg: `${nome} vence hoje.` });
+    else if (d > 0 && d <= 3) alerts.push({ level: 'aviso', msg: `${nome} vence em ${d} dia${d > 1 ? 's' : ''}.` });
+    else if (e.tipo === 'reembolso' && e.status === 'solicitado') {
+      alerts.push({ level: 'info', msg: `${nome} foi solicitado e ainda não foi pago.` });
+    }
+  }
+  el.append(alertBanner(alerts.slice(0, 6)) || '');
+
+  // Grade do calendário
+  const [y, m] = ym.split('-').map(Number);
+  const first = new Date(y, m - 1, 1).getDay();
+  const total = daysInMonth(ym);
+  const cells = [];
+  for (const dow of ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']) cells.push(h('div', { class: 'cal-dow' }, dow));
+  for (let i = 0; i < first; i++) cells.push(h('div', { class: 'cal-day other' }));
+  for (let d = 1; d <= total; d++) {
+    const iso = dateInMonth(ym, d);
+    const dayEvents = events.filter(e => e.data === iso);
+    const items = dayEvents.slice(0, 3).map(e => h('div', {
+      class: 'cal-item', style: `background:${TIPOS[e.tipo].bg};${e.status === 'vencido' ? 'outline:1px solid #E57373;' : ''}`,
+      title: `${e.titulo} · ${fmt(e.valor)}`,
+    }, `${TIPOS[e.tipo].icon} ${e.titulo}`));
+    if (dayEvents.length > 3) items.push(h('div', { class: 'cal-more' }, `+${dayEvents.length - 3} itens`));
+    cells.push(h('div', {
+      class: `cal-day ${iso === hoje ? 'today' : ''}`,
+      onclick: () => dayEvents.length && dayModal(iso, dayEvents),
+    }, h('div', { class: 'cal-num' }, d), items));
+  }
+  el.append(card(null, h('div', { class: 'cal-grid' }, cells)));
+
+  // Legenda
+  el.append(card('Legenda', h('div', { class: 'chart-legend', style: 'justify-content:flex-start' },
+    Object.entries({ receita: 'Receitas', despesa: 'Despesas', recorrente: 'Contas recorrentes', fatura: 'Faturas de cartão', provisao: 'Provisões', investimento: 'Investimentos', reembolso: 'Reembolsos esperados' })
+      .map(([k, label]) => h('span', { class: 'legend-item' },
+        h('span', { class: 'legend-dot', style: `background:${TIPOS[k].bg}` }), `${TIPOS[k].icon} ${label}`)))));
+}
+
+function dayModal(iso, events) {
+  modal(`Dia ${fmtDate(iso)}`, h('div', {},
+    table([
+      { label: '', render: e => TIPOS[e.tipo].icon },
+      { label: 'Item', k: 'titulo' },
+      { label: 'Valor', k: 'valor', money: true },
+      { label: 'Status', render: e => badge(e.status) },
+    ], events),
+    h('div', { class: 'stat-sub', style: 'margin-top:10px' },
+      `Total do dia: ${fmt(sum(events.filter(e => e.tipo !== 'receita'), e => e.valor))} em compromissos · ${fmt(sum(events.filter(e => e.tipo === 'receita'), e => e.valor))} em receitas.`)));
+}
+
+return { render };
+})();
+
+__m['fechamento'] = (() => {
+// Fechamento mensal guiado: checklist, indicadores e diagnóstico automático.
+const { h, fmt, ymLabel, ymAdd, ymDiff, sum, ymOf } = __m['utils'];
+const { db, ui } = __m['store'];
+const { monthSummary, monthExpenses, monthIncomes, recurringOccurrences, monthInstallments, expenseNet, monthInvestDone, monthProvisionDeposits, reimbPending, cardInvoice, } = __m['calc'];
+const { card, statCard, table } = __m['ui'];
+
+function render(el) {
+  const ym = ui.month;
+  const s = monthSummary(ym);
+
+  // ---- Checklist ----
+  const receitasPendentes = s.incomes.filter(i => i.status === 'prevista' || i.status === 'atrasada');
+  const recorrentesAbertas = s.recs.filter(o => o.status !== 'pago');
+  const semCategoria = s.expenses.filter(e => !e.categoria);
+  const semResponsavel = s.expenses.filter(e => e.reembolsavel && !e.pessoaId);
+  const reembolsosPendentes = db.reimbursements.filter(r => ['pendente', 'solicitado', 'parcial', 'atrasado'].includes(r.status));
+  const vencidas = [...s.expenses.filter(e => e.status === 'vencido'), ...s.recs.filter(o => o.status === 'vencido')];
+  const faturasAbertas = db.cards.filter(c => { const inv = cardInvoice(c.id, ym); return inv.total > 0 && inv.pago < inv.total; });
+  const investFeito = s.investRealizado >= s.investimentos;
+  const provFeitas = monthProvisionDeposits(ym) >= s.provisoes - 0.01;
+  const novasParcelas = db.purchases.filter(p => p.mesInicio === ym);
+  const valorNovasParcelas = sum(novasParcelas, p => Number(p.valorParcela) || 0);
+
+  const checklist = [
+    [!receitasPendentes.length, 'Todas as receitas previstas foram recebidas?', receitasPendentes.length ? `${receitasPendentes.length} receita(s) ainda em aberto (${fmt(sum(receitasPendentes, i => i.valor))}).` : 'Sim.'],
+    [!recorrentesAbertas.length, 'Todas as contas recorrentes foram pagas?', recorrentesAbertas.length ? `${recorrentesAbertas.length} conta(s) sem pagamento confirmado.` : 'Sim.'],
+    [!faturasAbertas.length, 'Todas as faturas foram conferidas e quitadas?', faturasAbertas.length ? `Faturas em aberto: ${faturasAbertas.map(c => c.nome).join(', ')}.` : 'Sim.'],
+    [!semCategoria.length, 'Todas as despesas estão categorizadas?', semCategoria.length ? `Você ainda tem ${semCategoria.length} despesa(s) sem categoria.` : 'Sim.'],
+    [!semResponsavel.length, 'Existem despesas reembolsáveis sem pessoa vinculada?', semResponsavel.length ? `${semResponsavel.length} despesa(s) reembolsável(is) sem pessoa.` : 'Não, tudo vinculado.'],
+    [!reembolsosPendentes.length, 'Existem reembolsos pendentes?', reembolsosPendentes.length ? `${fmt(sum(reembolsosPendentes, reimbPending))} ainda a receber.` : 'Não.'],
+    [!vencidas.length, 'Existem contas vencidas?', vencidas.length ? `${vencidas.length} conta(s) vencida(s).` : 'Não.'],
+    [investFeito, 'Os investimentos planejados foram feitos?', investFeito ? 'Sim.' : `Aportado ${fmt(s.investRealizado)} de ${fmt(s.investimentos)} planejados.`],
+    [provFeitas, 'As provisões foram cumpridas?', provFeitas ? 'Sim.' : `Guardado ${fmt(monthProvisionDeposits(ym))} de ${fmt(s.provisoes)} planejados.`],
+    [!novasParcelas.length, 'Alguma compra parcelada nova impactou os próximos meses?', novasParcelas.length ? `${novasParcelas.length} compra(s) nova(s): +${fmt(valorNovasParcelas)}/mês nos próximos meses.` : 'Não.'],
+  ];
+
+  el.append(card(`Checklist de fechamento · ${ymLabel(ym)}`,
+    checklist.map(([ok, pergunta, detalhe]) => h('div', { class: 'check-item' },
+      h('span', { class: 'check-mark' }, ok ? '✅' : '⚠️'),
+      h('div', {}, h('b', {}, pergunta), h('div', { class: 'stat-sub' }, detalhe))))));
+
+  // ---- Indicadores ----
+  const receitaRealizada = sum(s.incomes.filter(i => i.status === 'recebida'), i => i.valor);
+  const despesaRealizada =
+    sum(s.expenses.filter(e => ['pago', 'reembolsado', 'parcial'].includes(e.status)), e => e.valorTotal) +
+    sum(s.recs.filter(o => o.status === 'pago'), o => o.valor) +
+    sum(s.parcelas.filter(p => p.status === 'pago'), p => p.valor);
+  const despesaLiquida =
+    sum(s.expenses.filter(e => ['pago', 'reembolsado', 'parcial'].includes(e.status)), expenseNet) +
+    sum(s.recs.filter(o => o.status === 'pago'), o => o.valor) +
+    sum(s.parcelas.filter(p => p.status === 'pago'), p => p.valor);
+  const saldoFinal = receitaRealizada - despesaRealizada - monthInvestDone(ym) - monthProvisionDeposits(ym);
+  const diferenca = saldoFinal - s.saldoPrevisto;
+
+  el.append(h('div', { class: 'grid grid-cards' },
+    statCard('Receita realizada', receitaRealizada),
+    statCard('Despesa realizada (bruta)', despesaRealizada),
+    statCard('Despesa líquida real', despesaLiquida, { tone: 'tone-accent', sub: 'descontando reembolsos' }),
+    statCard('Investido no mês', monthInvestDone(ym)),
+    statCard('Provisionado no mês', monthProvisionDeposits(ym)),
+    statCard('Reembolsos pendentes', sum(reembolsosPendentes, reimbPending), { tone: reembolsosPendentes.length ? 'tone-warn' : '' }),
+    statCard('Novas parcelas criadas', valorNovasParcelas, { sub: novasParcelas.length ? `${novasParcelas.length} compra(s)` : '' }),
+    statCard('Saldo final do mês', saldoFinal, { tone: saldoFinal < 0 ? 'tone-bad' : 'tone-ok' }),
+    statCard('Planejado × realizado', `${diferenca >= 0 ? '+' : ''}${fmt(diferenca)}`, { tone: diferenca >= 0 ? 'tone-ok' : 'tone-warn', sub: 'diferença sobre o saldo previsto' })));
+
+  // ---- Diagnóstico automático ----
+  el.append(card('Diagnóstico do mês', h('p', { style: 'line-height:1.7' }, diagnostico(ym, s, { saldoFinal, diferenca, despesaLiquida, novasParcelas, valorNovasParcelas }))));
+}
+
+function diagnostico(ym, s, extra) {
+  const frases = [];
+  const { saldoFinal, diferenca, novasParcelas, valorNovasParcelas } = extra;
+
+  if (Math.abs(diferenca) < 1) frases.push(`Seu mês fechou exatamente como o planejado.`);
+  else if (diferenca > 0) frases.push(`Seu mês fechou ${fmt(diferenca)} acima do planejado.`);
+  else frases.push(`Seu mês fechou ${fmt(Math.abs(diferenca))} abaixo do planejado.`);
+
+  // Maiores categorias de gasto variável
+  const porCat = {};
+  for (const e of s.expenses.filter(e => e.natureza !== 'fixa')) {
+    porCat[e.categoria || 'Sem categoria'] = (porCat[e.categoria || 'Sem categoria'] || 0) + expenseNet(e);
+  }
+  const top = Object.entries(porCat).sort((a, b) => b[1] - a[1]).slice(0, 2).filter(([, v]) => v > 0);
+  if (top.length) frases.push(`O maior peso dos gastos variáveis veio de ${top.map(([c, v]) => `${c} (${fmt(v)})`).join(' e ')}.`);
+
+  if (novasParcelas.length) {
+    const fim = novasParcelas.map(p => ymAdd(p.mesInicio, Number(p.numParcelas) - Number(p.parcelaInicial || 1))).sort().pop();
+    frases.push(`Os parcelamentos novos aumentaram os compromissos em ${fmt(valorNovasParcelas)} por mês até ${ymLabel(fim)}.`);
+  }
+
+  if (s.comprometimento > 85) frases.push(`Atenção: ${s.comprometimento.toFixed(0)}% da renda segura está comprometida — acima do nível recomendado.`);
+  else if (s.comprometimento > 70) frases.push(`O comprometimento da renda ficou em ${s.comprometimento.toFixed(0)}%, um pouco acima do confortável.`);
+  else if (s.receitaSegura > 0) frases.push(`O comprometimento da renda ficou em ${s.comprometimento.toFixed(0)}%, dentro de um nível saudável.`);
+
+  if (s.saldoLivreReal < 0) frases.push(`O saldo livre real terminou negativo em ${fmt(Math.abs(s.saldoLivreReal))} — vale rever gastos variáveis do próximo mês.`);
+  else if (saldoFinal >= 0) frases.push(`A reserva financeira foi preservada.`);
+
+  const investOk = s.investRealizado >= s.investimentos;
+  if (s.investimentos > 0 && !investOk) frases.push(`Os aportes ficaram ${fmt(s.investimentos - s.investRealizado)} abaixo do planejado.`);
+
+  return frases.join(' ');
+}
+
+return { render };
+})();
+
+__m['simulador'] = (() => {
+// Simulador de nova compra: impacto nos meses futuros antes de decidir.
+const { h, fmt, fmtPct, ymNow, ymLabel, ymShort } = __m['utils'];
+const { db } = __m['store'];
+const { simulatePurchase, futureInstallmentsTotal } = __m['calc'];
+const { card, table, alertBanner, statCard } = __m['ui'];
+const { generateInstallments } = __m['cartoes'];
+const { add, save } = __m['store'];
+const { toast } = __m['ui'];
+
+const state = { valorTotal: '', numParcelas: 1, mesInicio: ymNow(), cartaoId: '', categoria: '', reembolsavel: false };
+
+function render(el, rerender) {
+  const form = h('div', { class: 'form-grid' },
+    field('Valor da compra (R$)', h('input', { type: 'number', step: '0.01', value: state.valorTotal, oninput: e => { state.valorTotal = Number(e.target.value); } })),
+    field('Número de parcelas', h('input', { type: 'number', min: 1, value: state.numParcelas, oninput: e => { state.numParcelas = Math.max(1, Number(e.target.value)); } })),
+    field('Mês de início', h('input', { type: 'month', value: state.mesInicio, oninput: e => { state.mesInicio = e.target.value; } })),
+    field('Cartão', h('select', { onchange: e => { state.cartaoId = e.target.value; } },
+      h('option', { value: '' }, 'Sem cartão / à vista'),
+      db.cards.map(c => h('option', { value: c.id, selected: state.cartaoId === c.id }, c.nome)))),
+    field('Categoria', h('select', { onchange: e => { state.categoria = e.target.value; } },
+      h('option', { value: '' }, '—'),
+      db.categoriesExpense.map(c => h('option', { value: c.nome, selected: state.categoria === c.nome }, c.nome)))));
+
+  el.append(card('Simule antes de comprar', form,
+    h('div', { class: 'modal-actions', style: 'justify-content:flex-start' },
+      h('button', { class: 'btn btn-primary', onclick: rerender }, 'Simular impacto'))));
+
+  if (!state.valorTotal || !state.mesInicio) {
+    el.append(h('div', { class: 'empty-state' }, 'Preencha o valor e o mês de início para ver o impacto da compra.'));
+    return;
+  }
+
+  const sim = simulatePurchase(state);
+  const alerts = [];
+  const negativo = sim.meses.find(m => m.saldoDepois < 0);
+  if (negativo) alerts.push({ level: 'erro', msg: `Atenção: ${ymLabel(negativo.ym)} ficará com saldo livre negativo (${fmt(negativo.saldoDepois)}) se essa compra for confirmada.` });
+  const estouraCartao = sim.meses.find(m => m.limiteCartao > 0 && m.faturaDepois > m.limiteCartao);
+  if (estouraCartao) alerts.push({ level: 'aviso', msg: `Em ${ymLabel(estouraCartao.ym)}, a fatura ultrapassará o limite planejado do cartão (${fmt(estouraCartao.faturaDepois)} de ${fmt(estouraCartao.limiteCartao)}).` });
+  const aporteMin = Number(db.settings.aporteMinimoMensal) || 0;
+  const comprometeAporte = sim.meses.find(m => aporteMin > 0 && m.saldoDepois < 0 && m.saldoAntes >= 0);
+  if (aporteMin > 0 && sim.meses.some(m => m.saldoDepois < aporteMin && m.saldoAntes >= aporteMin)) {
+    alerts.push({ level: 'info', msg: `Essa compra pode comprometer seu aporte mínimo mensal de ${fmt(aporteMin)} em alguns meses.` });
+  }
+  if (!alerts.length) alerts.push({ level: 'info', msg: `Essa compra comprometerá ${fmt(sim.valorParcela)} por mês até ${ymLabel(sim.meses[sim.meses.length - 1].ym)}, sem deixar nenhum mês negativo.` });
+
+  el.append(alertBanner(alerts));
+
+  el.append(h('div', { class: 'grid grid-cards' },
+    statCard('Valor da parcela', sim.valorParcela),
+    statCard('Meses impactados', String(sim.meses.length)),
+    statCard('Parcelamentos futuros após a compra', futureInstallmentsTotal(ymNow()) + Number(state.valorTotal))));
+
+  el.append(card('Impacto mês a mês',
+    table([
+      { label: 'Mês', render: m => ymShort(m.ym) },
+      { label: 'Parcela', render: m => fmt(m.valorParcela), right: true },
+      { label: 'Saldo livre hoje', render: m => fmt(m.saldoAntes), right: true },
+      { label: 'Saldo livre após', render: m => h('span', { style: m.saldoDepois < 0 ? 'color:var(--erro);font-weight:700' : 'color:#2E7D53;font-weight:600' }, fmt(m.saldoDepois)), right: true },
+      { label: 'Comprometimento após', render: m => fmtPct(m.comprometimentoDepois), right: true },
+      ...(state.cartaoId ? [
+        { label: 'Fatura hoje', render: m => fmt(m.faturaAntes), right: true },
+        { label: 'Fatura após', render: m => h('span', { style: m.limiteCartao > 0 && m.faturaDepois > m.limiteCartao ? 'color:var(--erro);font-weight:700' : '' }, fmt(m.faturaDepois)), right: true },
+      ] : []),
+    ], sim.meses)));
+
+  if (state.cartaoId) {
+    el.append(card(null, h('button', {
+      class: 'btn btn-secondary', onclick: () => {
+        const purchase = add('purchases', {
+          descricao: `Compra simulada (${state.categoria || 'sem categoria'})`,
+          dataCompra: new Date().toISOString().slice(0, 10),
+          categoria: state.categoria, valorTotal: state.valorTotal,
+          numParcelas: state.numParcelas, parcelaInicial: 1,
+          valorParcela: sim.valorParcela, cartaoId: state.cartaoId,
+          mesInicio: state.mesInicio, obs: 'Criada a partir do simulador',
+        });
+        db.installments.push(...generateInstallments(purchase));
+        save();
+        toast('Compra confirmada e parcelas distribuídas nos meses futuros.');
+        location.hash = '#/cartoes';
+      },
+    }, '✓ Confirmar esta compra e criar as parcelas')));
+  }
+}
+
+function field(label, input) {
+  return h('label', { class: 'form-field' }, h('span', { class: 'form-label' }, label), input);
+}
+
+return { render };
+})();
+
+__m['relatorios'] = (() => {
+// Relatórios com filtros e exportação CSV.
+const { h, fmt, ymShort, ymOf, sum, toCSV, downloadFile } = __m['utils'];
+const { db, ui, STATUS_DESPESA, CLASSIFICACAO_DESPESA } = __m['store'];
+const { annualRows, expenseNet, recurringOccurrences, monthInstallments, reimbPending, provisionMonthly } = __m['calc'];
+const { card, table, badge, statCard } = __m['ui'];
+const { donut } = __m['charts'];
+
+const f = { relatorio: 'orcamento', ano: String(new Date().getFullYear()), mes: '', categoria: '', banco: '', cartao: '', pessoa: '', status: '', tipo: '' };
+
+const RELATORIOS = [
+  ['orcamento', 'Orçamento mensal (DRE pessoal)'],
+  ['despesas', 'Despesas detalhadas'],
+  ['categoria', 'Despesas por categoria no ano'],
+  ['parcelamentos', 'Parcelamentos futuros'],
+  ['reembolsos', 'Reembolsos por pessoa'],
+  ['investimentos', 'Investimentos por banco'],
+  ['provisoes', 'Provisões futuras'],
+  ['recorrentes', 'Despesas recorrentes'],
+];
+
+function render(el, rerender) {
+  const sel = (k, opts, label) => h('select', { onchange: e => { f[k] = e.target.value; rerender(); } },
+    h('option', { value: '' }, label),
+    opts.map(o => { const [v, l] = Array.isArray(o) ? o : [o, o]; return h('option', { value: v, selected: f[k] === String(v) }, l); }));
+
+  el.append(card(null, h('div', { class: 'filters' },
+    h('select', { onchange: e => { f.relatorio = e.target.value; rerender(); } },
+      RELATORIOS.map(([v, l]) => h('option', { value: v, selected: f.relatorio === v }, l))),
+    sel('ano', [String(ui.year - 1), String(ui.year), String(ui.year + 1)], 'Ano: ' + f.ano),
+    ...(f.relatorio === 'despesas' ? [
+      sel('categoria', db.categoriesExpense.map(c => c.nome), 'Todas as categorias'),
+      sel('status', STATUS_DESPESA, 'Todos os status'),
+      sel('tipo', CLASSIFICACAO_DESPESA, 'Todas as classificações'),
+      sel('banco', db.banks.map(b => b.nome), 'Todos os bancos'),
+    ] : []),
+    ...(f.relatorio === 'reembolsos' ? [sel('pessoa', db.people.map(p => [p.id, p.nome]), 'Todas as pessoas')] : []))));
+
+  const year = Number(f.ano) || ui.year;
+  const builders = { orcamento, despesas, categoria, parcelamentos, reembolsos, investimentos, provisoes, recorrentes };
+  builders[f.relatorio](el, year);
+}
+
+function exportBtn(rows, headers, nome) {
+  return h('button', {
+    class: 'btn btn-ghost btn-sm',
+    onclick: () => downloadFile(`${nome}.csv`, toCSV(rows, headers)),
+  }, '⬇ Exportar CSV');
+}
+
+function head(title, rows, headers, nome) {
+  return h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, title), exportBtn(rows, headers, nome));
+}
+
+function orcamento(el, year) {
+  const rows = annualRows(year).map(r => ({
+    mes: ymShort(r.ym),
+    receita_total: r.receitaTotal.toFixed(2),
+    receita_segura: r.receitaSegura.toFixed(2),
+    despesas_fixas: r.despesasFixas.toFixed(2),
+    despesas_variaveis: r.despVariaveis.toFixed(2),
+    parcelamentos: r.parcelamentos.toFixed(2),
+    provisoes: r.provisoes.toFixed(2),
+    investimentos: r.investimentos.toFixed(2),
+    saldo_previsto: r.saldoPrevisto.toFixed(2),
+    saldo_livre_real: r.saldoLivreReal.toFixed(2),
+    comprometimento_pct: r.comprometimento.toFixed(1),
+  }));
+  const headers = Object.keys(rows[0]);
+  el.append(card(null, head(`DRE pessoal · ${year}`, rows, headers, `dre-${year}`),
+    table(headers.map(hd => ({ label: hd.replaceAll('_', ' '), k: hd, right: hd !== 'mes' })), rows)));
+}
+
+function despesas(el, year) {
+  let list = db.expenses.filter(e => (e.dataVencimento || e.dataCompra || '').startsWith(String(year)));
+  if (f.categoria) list = list.filter(e => e.categoria === f.categoria);
+  if (f.status) list = list.filter(e => e.status === f.status);
+  if (f.tipo) list = list.filter(e => e.tipo === f.tipo);
+  if (f.banco) list = list.filter(e => e.banco === f.banco);
+  const rows = list.map(e => ({
+    data: e.dataVencimento || e.dataCompra, descricao: e.descricao, categoria: e.categoria || '',
+    classificacao: e.tipo || '', valor: Number(e.valorTotal).toFixed(2),
+    valor_liquido: expenseNet(e).toFixed(2), forma: e.formaPagamento || '', banco: e.banco || '', status: e.status,
+  }));
+  el.append(card(null, head(`Despesas · ${year} (${rows.length})`, rows, ['data', 'descricao', 'categoria', 'classificacao', 'valor', 'valor_liquido', 'forma', 'banco', 'status'], `despesas-${year}`),
+    table([
+      { label: 'Data', k: 'data', date: true },
+      { label: 'Descrição', k: 'descricao' },
+      { label: 'Categoria', k: 'categoria' },
+      { label: 'Classificação', k: 'classificacao' },
+      { label: 'Valor', k: 'valor', money: true },
+      { label: 'Líquido', k: 'valor_liquido', money: true },
+      { label: 'Status', render: r => badge(r.status) },
+    ], rows),
+    h('div', { class: 'stat-sub', style: 'margin-top:8px;text-align:right' },
+      `Total: ${fmt(sum(rows, r => r.valor))} · Líquido: ${fmt(sum(rows, r => r.valor_liquido))}`)));
+}
+
+function categoria(el, year) {
+  const map = {};
+  for (let m = 1; m <= 12; m++) {
+    const ym = `${year}-${String(m).padStart(2, '0')}`;
+    for (const e of db.expenses.filter(e => ymOf(e.dataVencimento || e.dataCompra) === ym && e.status !== 'cancelado')) {
+      map[e.categoria || 'Sem categoria'] = (map[e.categoria || 'Sem categoria'] || 0) + expenseNet(e);
+    }
+    for (const o of recurringOccurrences(ym)) map[o.categoria || 'Sem categoria'] = (map[o.categoria || 'Sem categoria'] || 0) + o.valor;
+    for (const p of monthInstallments(ym)) {
+      const compra = db.purchases.find(c => c.id === p.purchaseId);
+      map[compra?.categoria || 'Sem categoria'] = (map[compra?.categoria || 'Sem categoria'] || 0) + p.valor;
+    }
+  }
+  const data = Object.entries(map).sort((a, b) => b[1] - a[1]);
+  const rows = data.map(([cat, v]) => ({ categoria: cat, valor: v.toFixed(2) }));
+  el.append(card(null, head(`Despesas por categoria · ${year}`, rows, ['categoria', 'valor'], `categorias-${year}`),
+    h('div', { class: 'grid grid-2' },
+      donut(data, { size: 200, maxSlices: 5 }),
+      table([{ label: 'Categoria', k: 'categoria' }, { label: 'Valor no ano', k: 'valor', money: true }], rows))));
+}
+
+function parcelamentos(el) {
+  const rows = db.installments
+    .filter(p => p.status !== 'pago')
+    .sort((a, b) => a.mes.localeCompare(b.mes))
+    .map(p => {
+      const compra = db.purchases.find(c => c.id === p.purchaseId);
+      return {
+        mes: p.mes, cartao: db.cards.find(c => c.id === p.cartaoId)?.nome || '', descricao: compra?.descricao || '',
+        parcela: `${p.numero}/${p.total}`, valor: Number(p.valor).toFixed(2), categoria: compra?.categoria || '',
+      };
+    });
+  el.append(card(null, head(`Parcelamentos futuros (${fmt(sum(rows, r => r.valor))})`, rows, ['mes', 'cartao', 'descricao', 'parcela', 'valor', 'categoria'], 'parcelamentos'),
+    table([
+      { label: 'Mês', k: 'mes' }, { label: 'Cartão', k: 'cartao' }, { label: 'Descrição', k: 'descricao' },
+      { label: 'Parcela', k: 'parcela' }, { label: 'Valor', k: 'valor', money: true }, { label: 'Categoria', k: 'categoria' },
+    ], rows)));
+}
+
+function reembolsos(el) {
+  let list = db.reimbursements;
+  if (f.pessoa) list = list.filter(r => r.pessoaId === f.pessoa);
+  const rows = list.map(r => ({
+    data: r.data, pessoa: db.people.find(p => p.id === r.pessoaId)?.nome || '', descricao: r.descricao,
+    valor_total: Number(r.valorTotalDespesa || 0).toFixed(2), a_reembolsar: Number(r.valorAReembolsar).toFixed(2),
+    recebido: Number(r.valorRecebido || 0).toFixed(2), pendente: reimbPending(r).toFixed(2), status: r.status,
+  }));
+  el.append(card(null, head('Reembolsos por pessoa', rows, ['data', 'pessoa', 'descricao', 'valor_total', 'a_reembolsar', 'recebido', 'pendente', 'status'], 'reembolsos'),
+    table([
+      { label: 'Data', k: 'data', date: true }, { label: 'Pessoa', k: 'pessoa' }, { label: 'Descrição', k: 'descricao' },
+      { label: 'A reembolsar', k: 'a_reembolsar', money: true }, { label: 'Recebido', k: 'recebido', money: true },
+      { label: 'Pendente', k: 'pendente', money: true }, { label: 'Status', render: r => badge(r.status) },
+    ], rows)));
+}
+
+function investimentos(el) {
+  const rows = db.investments.map(i => ({
+    banco: i.banco, produto: i.produto, tipo: i.tipo, objetivo: i.objetivo || '',
+    valor_atual: Number(i.valorAtual).toFixed(2), aporte_mensal: Number(i.aporteMensalPlanejado || 0).toFixed(2),
+  }));
+  el.append(card(null, head(`Investimentos (${fmt(sum(rows, r => r.valor_atual))})`, rows, ['banco', 'produto', 'tipo', 'objetivo', 'valor_atual', 'aporte_mensal'], 'investimentos'),
+    table([
+      { label: 'Banco', k: 'banco' }, { label: 'Produto', k: 'produto' }, { label: 'Tipo', k: 'tipo' },
+      { label: 'Valor atual', k: 'valor_atual', money: true }, { label: 'Aporte/mês', k: 'aporte_mensal', money: true },
+    ], rows)));
+}
+
+function provisoes(el) {
+  const rows = db.provisions.map(p => ({
+    nome: p.nome, alvo: Number(p.valorAlvo).toFixed(2), data_alvo: p.dataAlvo || '',
+    mensal: provisionMonthly(p, ui.month).toFixed(2), acumulado: Number(p.valorAcumulado || 0).toFixed(2), status: p.status,
+  }));
+  el.append(card(null, head('Provisões futuras', rows, ['nome', 'alvo', 'data_alvo', 'mensal', 'acumulado', 'status'], 'provisoes'),
+    table([
+      { label: 'Provisão', k: 'nome' }, { label: 'Alvo', k: 'alvo', money: true }, { label: 'Data alvo', k: 'data_alvo' },
+      { label: 'Mensal', k: 'mensal', money: true }, { label: 'Acumulado', k: 'acumulado', money: true },
+      { label: 'Status', render: r => badge(r.status) },
+    ], rows)));
+}
+
+function recorrentes(el) {
+  const rows = db.recurring.map(r => ({
+    conta: r.nome, categoria: r.categoria || '', valor: Number(r.valorPrevisto).toFixed(2),
+    dia: r.diaVencimento, periodicidade: r.periodicidade, inicio: r.dataInicio || '', fim: r.dataFim || '', status: r.status,
+  }));
+  el.append(card(null, head(`Despesas recorrentes (${fmt(sum(rows.filter(r => r.status === 'ativa' && r.periodicidade === 'mensal'), r => r.valor))}/mês)`, rows, ['conta', 'categoria', 'valor', 'dia', 'periodicidade', 'inicio', 'fim', 'status'], 'recorrentes'),
+    table([
+      { label: 'Conta', k: 'conta' }, { label: 'Categoria', k: 'categoria' }, { label: 'Valor', k: 'valor', money: true },
+      { label: 'Dia', k: 'dia' }, { label: 'Periodicidade', k: 'periodicidade' }, { label: 'Status', render: r => badge(r.status) },
+    ], rows)));
+}
+
+return { render };
+})();
+
+__m['carro'] = (() => {
+// Módulo do carro: custos consolidados de todas as despesas ligadas ao carro.
+const { h, fmt, ymShort, ymAdd, ymOf, sum } = __m['utils'];
+const { db, ui, CATEGORIAS_CARRO } = __m['store'];
+const { monthExpenses, recurringOccurrences, monthInstallments, expenseNet, provisionMonthly } = __m['calc'];
+const { card, statCard, table, badge } = __m['ui'];
+const { bars, donut, CHART_COLORS } = __m['charts'];
+
+const SUBCATS = ['Financiamento', 'Combustível', 'Seguro', 'Manutenção', 'Revisão', 'IPVA', 'Estacionamento', 'Lavagem', 'Multas', 'Outros'];
+
+function isCarro(categoria) {
+  return CATEGORIAS_CARRO.includes(categoria);
+}
+
+// Todas as despesas do carro em um mês (avulsas + recorrentes + parcelas).
+function carItems(ym) {
+  const out = [];
+  for (const e of monthExpenses(ym).filter(e => isCarro(e.categoria))) {
+    out.push({ data: e.dataVencimento || e.dataCompra, descricao: e.descricao, sub: e.subcategoria || e.categoria, valor: expenseNet(e), status: e.status });
+  }
+  for (const o of recurringOccurrences(ym).filter(o => isCarro(o.categoria))) {
+    out.push({ data: o.dataVencimento, descricao: o.nome, sub: o.categoria, valor: o.valor, status: o.status });
+  }
+  for (const p of monthInstallments(ym)) {
+    const compra = db.purchases.find(c => c.id === p.purchaseId);
+    if (compra && isCarro(compra.categoria)) {
+      out.push({ data: `${p.mes}-01`, descricao: `${compra.descricao} (${p.numero}/${p.total})`, sub: compra.subcategoria || compra.categoria, valor: p.valor, status: p.status });
+    }
+  }
+  return out;
+}
+
+function render(el) {
+  const ym = ui.month;
+  const items = carItems(ym);
+  const mensal = sum(items, i => i.valor);
+
+  const year = ym.slice(0, 4);
+  let anual = 0;
+  const meses = [];
+  for (let m = 1; m <= 12; m++) {
+    const mm = `${year}-${String(m).padStart(2, '0')}`;
+    const v = sum(carItems(mm), i => i.valor);
+    anual += v;
+    meses.push([ymShort(mm), v]);
+  }
+
+  const provCarro = db.provisions.filter(p => isCarro(p.categoria) || /carro|ipva|seguro|pneu|revis/i.test(p.nome));
+
+  el.append(h('div', { class: 'grid grid-cards' },
+    statCard('Custo do carro no mês', mensal),
+    statCard(`Custo no ano de ${year}`, anual),
+    statCard('Provisões do carro (mensal)', sum(provCarro, p => provisionMonthly(p, ym))),
+    statCard('Provisionado para o carro', sum(provCarro, p => p.valorAcumulado), { tone: 'tone-ok' })));
+
+  // Por subcategoria
+  const porSub = {};
+  for (const i of items) porSub[i.sub || 'Outros'] = (porSub[i.sub || 'Outros'] || 0) + i.valor;
+  el.append(h('div', { class: 'grid grid-2' },
+    card('Custo por categoria no mês', donut(Object.entries(porSub).sort((a, b) => b[1] - a[1]), { size: 170 })),
+    card('Evolução mensal no ano',
+      bars(meses.map(m => m[0]), [{ name: 'Custo do carro', color: CHART_COLORS[3], values: meses.map(m => m[1]) }], { height: 200 }))));
+
+  el.append(card('Lançamentos do carro no mês',
+    table([
+      { label: 'Data', k: 'data', date: true },
+      { label: 'Descrição', k: 'descricao' },
+      { label: 'Categoria', k: 'sub' },
+      { label: 'Valor', k: 'valor', money: true },
+      { label: 'Status', render: i => badge(i.status) },
+    ], items.sort((a, b) => a.data.localeCompare(b.data)),
+    { empty: 'Nenhuma despesa do carro neste mês. Use as categorias Carro, Combustível ou Transporte, ou as subcategorias: ' + SUBCATS.join(', ') + '.' })));
+
+  if (provCarro.length) {
+    el.append(card('Provisões ligadas ao carro',
+      table([
+        { label: 'Provisão', k: 'nome' },
+        { label: 'Alvo', k: 'valorAlvo', money: true },
+        { label: 'Mensal', render: p => fmt(provisionMonthly(p, ym)), right: true },
+        { label: 'Acumulado', k: 'valorAcumulado', money: true },
+        { label: 'Status', render: p => badge(p.status) },
+      ], provCarro)));
+  }
+}
+
+return { render };
+})();
+
+__m['config'] = (() => {
+// Configurações: metas, categorias, bancos, pessoas, regras e dados.
+const { h, fmt, downloadFile, todayISO, ymNow, ymAdd, uid } = __m['utils'];
+const { db, save, add, update, remove, resetAll } = __m['store'];
+const { card, table, formModal, confirmModal, rowActions, toast, badge } = __m['ui'];
+const { generateInstallments } = __m['cartoes'];
+const { addCard } = __m['cartoes'];
+
+function render(el, rerender) {
+  // ---- Metas financeiras ----
+  const metas = [
+    ['rendaSegura', 'Renda segura mensal (referência)'],
+    ['limiteComprometimento', 'Limite de comprometimento da renda (%)'],
+    ['limiteParcelamentosPct', 'Limite de parcelamentos sobre a renda segura (%)'],
+    ['metaReservaMin', 'Reserva mínima desejada (R$)'],
+    ['metaReservaMax', 'Reserva ideal (R$)'],
+    ['aporteMinimoMensal', 'Aporte mínimo mensal (R$)'],
+    ['limiteLazer', 'Limite máximo de Lazer (R$/mês)'],
+    ['limiteAlimentacaoFora', 'Limite de Alimentação fora de casa (R$/mês)'],
+    ['saldoMinimoSeguranca', 'Saldo mínimo de segurança em conta (R$)'],
+  ];
+  el.append(card(null,
+    h('div', { class: 'card-head' },
+      h('h2', { class: 'card-title' }, '🎯 Metas financeiras'),
+      h('button', { class: 'btn btn-primary btn-sm', onclick: () =>
+        formModal('Editar metas', metas.map(([k, label]) => ({ k, label, type: 'money' })), { ...db.settings }, vals => {
+          Object.assign(db.settings, vals); save(); toast('Metas atualizadas.'); rerender();
+        }) }, 'Editar metas')),
+    table([
+      { label: 'Meta', render: m => m[1] },
+      { label: 'Valor', render: m => {
+          const v = Number(db.settings[m[0]]) || 0;
+          return m[0].includes('Pct') || m[0] === 'limiteComprometimento' ? `${v}%` : fmt(v);
+        }, right: true },
+    ], metas)));
+
+  // ---- Pessoas para reembolso ----
+  const pessoaFields = [
+    { k: 'nome', label: 'Nome', type: 'text', required: true },
+    { k: 'relacao', label: 'Relação', type: 'text', placeholder: 'Ex.: irmão, marido…' },
+    { k: 'contato', label: 'WhatsApp (com DDD e país)', type: 'text', placeholder: '5521999999999', help: 'Usado no botão "Abrir no WhatsApp".' },
+  ];
+  el.append(card(null,
+    h('div', { class: 'card-head' },
+      h('h2', { class: 'card-title' }, '👤 Pessoas para reembolso'),
+      h('button', { class: 'btn btn-primary btn-sm', onclick: () =>
+        formModal('Nova pessoa', pessoaFields, {}, vals => { add('people', { ...vals, ativo: true }); rerender(); }) }, '+ Nova pessoa')),
+    table([
+      { label: 'Nome', k: 'nome' },
+      { label: 'Relação', k: 'relacao' },
+      { label: 'Contato', k: 'contato' },
+      { label: '', render: p => rowActions(
+          ['✏️', () => formModal('Editar pessoa', pessoaFields, p, vals => { update('people', p.id, vals); rerender(); }), 'Editar'],
+          ['🗑', () => confirmModal(`Excluir ${p.nome}? Os reembolsos vinculados serão mantidos sem pessoa.`, () => { remove('people', p.id); rerender(); }), 'Excluir']), right: true },
+    ], db.people, { empty: 'Cadastre as pessoas que devem reembolsos (irmão, marido…).' })));
+
+  // ---- Bancos ----
+  el.append(card(null,
+    h('div', { class: 'card-head' },
+      h('h2', { class: 'card-title' }, '🏦 Bancos'),
+      h('div', { style: 'display:flex;gap:8px' },
+        h('button', { class: 'btn btn-primary btn-sm', onclick: () =>
+          formModal('Novo banco', [{ k: 'nome', label: 'Nome do banco', type: 'text', required: true }], {}, vals => { add('banks', vals); rerender(); }) }, '+ Banco'),
+        h('button', { class: 'btn btn-ghost btn-sm', onclick: () => addCard(rerender) }, '+ Cartão'))),
+    table([
+      { label: 'Banco', k: 'nome' },
+      { label: 'Cartões vinculados', render: b => db.cards.filter(c => c.banco === b.nome).map(c => c.nome).join(', ') || '—' },
+      { label: '', render: b => rowActions(['🗑', () => confirmModal(`Excluir o banco ${b.nome}?`, () => { remove('banks', b.id); rerender(); }), 'Excluir']), right: true },
+    ], db.banks)));
+
+  // ---- Categorias ----
+  const catFields = [
+    { k: 'nome', label: 'Nome da categoria', type: 'text', required: true },
+    { k: 'subTexto', label: 'Subcategorias (separadas por vírgula)', type: 'text', full: true },
+  ];
+  el.append(card(null,
+    h('div', { class: 'card-head' },
+      h('h2', { class: 'card-title' }, '🏷️ Categorias de despesa'),
+      h('button', { class: 'btn btn-primary btn-sm', onclick: () =>
+        formModal('Nova categoria', catFields, {}, vals => {
+          add('categoriesExpense', { nome: vals.nome, sub: (vals.subTexto || '').split(',').map(s => s.trim()).filter(Boolean) });
+          rerender();
+        }) }, '+ Categoria')),
+    table([
+      { label: 'Categoria', k: 'nome' },
+      { label: 'Subcategorias', render: c => (c.sub || []).join(', ') || '—' },
+      { label: '', render: c => rowActions(
+          ['✏️', () => formModal('Editar categoria', catFields, { ...c, subTexto: (c.sub || []).join(', ') }, vals => {
+            update('categoriesExpense', c.id, { nome: vals.nome, sub: (vals.subTexto || '').split(',').map(s => s.trim()).filter(Boolean) });
+            rerender();
+          }), 'Editar'],
+          ['🗑', () => confirmModal(`Excluir a categoria ${c.nome}?`, () => { remove('categoriesExpense', c.id); rerender(); }), 'Excluir']), right: true },
+    ], db.categoriesExpense)));
+
+  // ---- Regras automáticas de categorização ----
+  const ruleFields = [
+    { k: 'contem', label: 'Se a descrição contém…', type: 'text', required: true, placeholder: 'Ex.: posto, ifood, uber' },
+    { k: 'acao', label: 'Então…', type: 'select', required: true, value: 'categoria',
+      options: [['categoria', 'Sugerir categoria'], ['pessoa', 'Sugerir pessoa para reembolso']] },
+    { k: 'valor', label: 'Valor sugerido', type: 'text', required: true, help: 'Nome da categoria ou da pessoa.' },
+  ];
+  el.append(card(null,
+    h('div', { class: 'card-head' },
+      h('h2', { class: 'card-title' }, '⚡ Regras automáticas de categorização'),
+      h('button', { class: 'btn btn-primary btn-sm', onclick: () =>
+        formModal('Nova regra', ruleFields, {}, vals => { add('rules', vals); rerender(); }) }, '+ Regra')),
+    table([
+      { label: 'Se contém', render: r => h('code', {}, r.contem) },
+      { label: 'Ação', render: r => r.acao === 'pessoa' ? 'Sugerir pessoa' : 'Sugerir categoria' },
+      { label: 'Valor', k: 'valor' },
+      { label: '', render: r => rowActions(
+          ['✏️', () => formModal('Editar regra', ruleFields, r, vals => { update('rules', r.id, vals); rerender(); }), 'Editar'],
+          ['🗑', () => confirmModal('Excluir esta regra?', () => { remove('rules', r.id); rerender(); }), 'Excluir']), right: true },
+    ], db.rules, { empty: 'Nenhuma regra. As regras aceleram o cadastro sugerindo categorias automaticamente.' })));
+
+  // ---- Dados ----
+  el.append(card('💾 Dados',
+    h('p', { class: 'stat-sub' }, 'Seus dados ficam salvos apenas neste navegador (localStorage). Faça backup regularmente.'),
+    h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
+      h('button', { class: 'btn btn-secondary btn-sm', onclick: () =>
+        downloadFile(`meu-orcamento-backup-${todayISO()}.json`, JSON.stringify(db, null, 2), 'application/json') }, '⬇ Exportar backup (JSON)'),
+      (() => {
+        const input = h('input', { type: 'file', accept: '.json', style: 'display:none' });
+        input.addEventListener('change', () => {
+          const file = input.files[0];
+          if (!file) return;
+          file.text().then(t => {
+            try {
+              const data = JSON.parse(t);
+              if (!data.settings) throw new Error('formato inválido');
+              Object.assign(db, data); save();
+              toast('Backup restaurado.'); rerender();
+            } catch { toast('Arquivo inválido. Use um backup exportado pelo app.'); }
+          });
+        });
+        return h('span', {}, input, h('button', { class: 'btn btn-ghost btn-sm', onclick: () => input.click() }, '⬆ Restaurar backup'));
+      })(),
+      h('button', { class: 'btn btn-ghost btn-sm', onclick: () => loadSample(rerender) }, '✨ Carregar dados de exemplo'),
+      h('button', { class: 'btn btn-danger btn-sm', onclick: () =>
+        confirmModal('Apagar TODOS os dados e recomeçar do zero? Esta ação não pode ser desfeita.', () => { resetAll(); location.reload(); }) }, '🗑 Apagar tudo'))));
+}
+
+// Dados de exemplo para conhecer o app.
+function loadSample(rerender) {
+  confirmModal('Carregar dados de exemplo? Eles serão somados aos seus dados atuais.', doLoad, { yesLabel: 'Carregar', danger: false });
+  function doLoad() {
+    const ym = ymNow();
+    const p1 = add('people', { nome: 'Irmão', relacao: 'irmão', contato: '', ativo: true });
+    const cartao = add('cards', { nome: 'Cartão Principal', banco: 'Santander', diaFechamento: 28, diaVencimento: 8, limitePlanejado: 2500, ativo: true });
+
+    if (!db.incomes.length) {
+      add('incomes', { data: `${ym}-05`, descricao: 'Salário', categoria: 'Salário fixo', valor: 8500, tipo: 'segura', status: 'recebida', recorrente: true });
+    }
+    add('incomes', { data: `${ym}-15`, descricao: 'Aula de pós-graduação', categoria: 'Aula ou docência', valor: 1200, tipo: 'variavel', status: 'prevista' });
+
+    for (const [nome, categoria, valor, dia] of [
+      ['Aluguel', 'Moradia', 2200, 10], ['Condomínio', 'Condomínio', 650, 10],
+      ['Luz', 'Luz', 180, 15], ['Internet', 'Internet, TV e celular', 120, 20],
+      ['Financiamento do carro', 'Dívidas', 890, 12], ['Streaming', 'Assinaturas', 55, 5],
+    ]) {
+      add('recurring', { nome, categoria, valorPrevisto: valor, diaVencimento: dia, periodicidade: 'mensal', dataInicio: ymAdd(ym, -3), dataFim: '', formaPagamento: 'Débito automático', banco: 'Santander', status: 'ativa', obs: '' });
+    }
+
+    const compra = add('purchases', { descricao: 'Passagens de avião', dataCompra: todayISO(), categoria: 'Viagem', valorTotal: 1800, numParcelas: 6, parcelaInicial: 1, valorParcela: 300, cartaoId: cartao.id, mesInicio: ym, responsavel: '', reembolsavel: false, obs: 'exemplo' });
+    db.installments.push(...generateInstallments(compra));
+
+    const mercado = add('expenses', { dataCompra: `${ym}-08`, dataVencimento: `${ym}-08`, descricao: 'Mercado da semana', categoria: 'Mercado', valorTotal: 420, formaPagamento: 'Débito', banco: 'Santander', natureza: 'variavel', status: 'pago', dataPagamento: `${ym}-08` });
+    const jantar = add('expenses', { dataCompra: `${ym}-14`, dataVencimento: `${ym}-14`, descricao: 'Jantar em família', categoria: 'Alimentação fora de casa', valorTotal: 300, formaPagamento: 'Pix', natureza: 'variavel', status: 'pago', dataPagamento: `${ym}-14`, reembolsavel: true, pessoaId: p1.id, valorReembolsavel: 150 });
+    add('reimbursements', { expenseId: jantar.id, pessoaId: p1.id, descricao: 'Jantar em família', data: `${ym}-14`, categoria: 'Alimentação fora de casa', valorTotalDespesa: 300, criterio: 'igual', valorAReembolsar: 150, valorRecebido: 0, status: 'pendente', dataSolicitacao: '', dataRecebimento: '', obs: '' });
+
+    add('provisions', { nome: 'IPVA 2027', categoria: 'Impostos', valorAlvo: 2400, dataAlvo: ymAdd(ym, 6), valorMensal: '', valorAcumulado: 400, status: 'ativa', obs: '' });
+    add('provisions', { nome: 'Presentes de fim de ano', categoria: 'Presentes', valorAlvo: 1200, dataAlvo: `${ym.slice(0, 4)}-12`, valorMensal: '', valorAcumulado: 200, status: 'ativa', obs: '' });
+
+    add('investments', { banco: 'XP', produto: 'CDB liquidez diária', tipo: 'Reserva de emergência', objetivo: 'Reserva de emergência', valorAtual: 28000, aporteMensalPlanejado: 500, liquidez: 'Diária', obs: '' });
+    add('investments', { banco: 'Banco do Brasil', produto: 'Previdência', tipo: 'Previdência privada', objetivo: 'Aposentadoria', valorAtual: 15000, aporteMensalPlanejado: 300, liquidez: 'Baixa', obs: '' });
+
+    save();
+    toast('Dados de exemplo carregados. Explore o Dashboard!');
+    rerender();
+  }
+}
+
+return { render };
+})();
+
+__m['app'] = (() => {
+// Shell do app: navegação, seletor de mês, onboarding e roteamento.
+const { h, ymLabel, ymAdd } = __m['utils'];
+const { db, ui, save } = __m['store'];
+const { formModal, modal } = __m['ui'];
+
+const dashboard = __m['dashboard'];
+const anual = __m['anual'];
+const receitas = __m['receitas'];
+const despesas = __m['despesas'];
+const cartoes = __m['cartoes'];
+const recorrentes = __m['recorrentes'];
+const provisoes = __m['provisoes'];
+const investimentos = __m['investimentos'];
+const reembolsos = __m['reembolsos'];
+const calendario = __m['calendario'];
+const fechamento = __m['fechamento'];
+const simulador = __m['simulador'];
+const relatorios = __m['relatorios'];
+const carro = __m['carro'];
+const config = __m['config'];
+
+const ROUTES = [
+  { path: 'dashboard', label: 'Dashboard', icon: '🏠', view: dashboard, month: true },
+  { path: 'anual', label: 'Visão anual', icon: '📅', view: anual },
+  { path: 'calendario', label: 'Calendário', icon: '🗓️', view: calendario, month: true },
+  { path: 'receitas', label: 'Receitas', icon: '💰', view: receitas, month: true },
+  { path: 'despesas', label: 'Despesas', icon: '🧾', view: despesas, month: true },
+  { path: 'cartoes', label: 'Cartões e parcelas', icon: '💳', view: cartoes, month: true },
+  { path: 'recorrentes', label: 'Contas recorrentes', icon: '🔁', view: recorrentes, month: true },
+  { path: 'provisoes', label: 'Provisões', icon: '🏦', view: provisoes, month: true },
+  { path: 'investimentos', label: 'Investimentos', icon: '📈', view: investimentos, month: true },
+  { path: 'reembolsos', label: 'Reembolsos', icon: '🤝', view: reembolsos },
+  { path: 'simulador', label: 'Simulador de compra', icon: '🧮', view: simulador },
+  { path: 'carro', label: 'Carro', icon: '🚗', view: carro, month: true },
+  { path: 'fechamento', label: 'Fechamento mensal', icon: '✅', view: fechamento, month: true },
+  { path: 'relatorios', label: 'Relatórios', icon: '📊', view: relatorios },
+  { path: 'config', label: 'Configurações', icon: '⚙️', view: config },
+];
+
+const MOBILE_NAV = ['dashboard', 'calendario', 'despesas', 'cartoes', 'reembolsos', 'investimentos', 'provisoes', 'relatorios', 'config'];
+
+function currentRoute() {
+  const path = (location.hash || '#/dashboard').replace(/^#\//, '').split('?')[0];
+  return ROUTES.find(r => r.path === path) || ROUTES[0];
+}
+
+function render() {
+  const route = currentRoute();
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+
+  // Sidebar (desktop)
+  const sidebar = h('nav', { class: 'sidebar' },
+    h('div', { class: 'logo' }, '🌿 Meu Orçamento', h('small', {}, 'Inteligente')),
+    ROUTES.map(r => h('a', {
+      class: `nav-link ${r.path === route.path ? 'active' : ''}`, href: `#/${r.path}`,
+    }, h('span', { class: 'nav-icon' }, r.icon), r.label)));
+
+  // Menu inferior (mobile)
+  const bottomNav = h('nav', { class: 'bottom-nav' },
+    MOBILE_NAV.map(p => {
+      const r = ROUTES.find(x => x.path === p);
+      return h('a', { class: r.path === route.path ? 'active' : '', href: `#/${r.path}` },
+        h('span', { class: 'nav-icon' }, r.icon), r.label.split(' ')[0]);
+    }));
+
+  // Barra superior com seletor de mês
+  const topbar = h('div', { class: 'topbar' },
+    h('h1', {}, route.icon + ' ' + route.label),
+    route.month !== false && route.month ? monthPicker() : null);
+
+  const content = h('div', {});
+  const main = h('main', { class: 'main' }, topbar, content);
+
+  app.append(sidebar, main, bottomNav,
+    h('button', { class: 'fab', title: 'Nova despesa', onclick: () => despesas.quickAdd(render) }, '+'));
+
+  route.view.render(content, render);
+
+  if (!db.settings.onboardingDone && !document.querySelector('.modal-overlay')) showOnboarding();
+}
+
+function monthPicker() {
+  return h('div', { class: 'month-picker' },
+    h('button', { onclick: () => { ui.month = ymAdd(ui.month, -1); render(); } }, '‹'),
+    h('span', { class: 'month-label' }, ymLabel(ui.month)),
+    h('button', { onclick: () => { ui.month = ymAdd(ui.month, 1); render(); } }, '›'));
+}
+
+function showOnboarding() {
+  const steps = [
+    ['Informe sua renda segura mensal e suas metas', null],
+    ['Cadastre seus bancos e cartões', '#/config'],
+    ['Cadastre suas contas recorrentes (aluguel, luz, assinaturas…)', '#/recorrentes'],
+    ['Importe seus parcelamentos existentes em massa', '#/cartoes'],
+    ['Cadastre as pessoas que devem reembolsos a você', '#/config'],
+    ['Acompanhe tudo pelo Dashboard', '#/dashboard'],
+  ];
+  const overlay = formModal('Bem-vinda ao Meu Orçamento Inteligente 🌿', [
+    { k: 'nome', label: 'Como podemos te chamar?', type: 'text', placeholder: 'Seu nome' },
+    { k: 'rendaSegura', label: 'Renda segura mensal (R$)', type: 'money', required: true, help: 'Salário e rendas garantidas. Você poderá detalhar depois em Receitas.' },
+    { k: 'metaReservaMin', label: 'Meta mínima de reserva (R$)', type: 'money', value: db.settings.metaReservaMin },
+    { k: 'aporteMinimoMensal', label: 'Aporte mensal desejado (R$)', type: 'money' },
+  ], { ...db.settings }, vals => {
+    Object.assign(db.settings, vals, { onboardingDone: true });
+    // Cria a receita segura recorrente inicial
+    if (vals.rendaSegura > 0 && !db.incomes.length) {
+      db.incomes.push({
+        id: 'renda-inicial', data: `${ui.month}-05`, descricao: 'Salário',
+        categoria: 'Salário fixo', valor: vals.rendaSegura, tipo: 'segura',
+        status: 'prevista', recorrente: true, obs: 'Criada no primeiro acesso',
+      });
+    }
+    save();
+    modal('Próximos passos', h('div', {},
+      steps.map(([txt, href], i) => h('div', { class: 'onboard-step' },
+        h('span', { class: 'onboard-num' }, i + 1),
+        href ? h('a', { href, onclick: () => document.querySelector('.modal-overlay')?.remove() }, txt) : h('span', {}, txt)))));
+    render();
+  }, { saveLabel: 'Começar' });
+  // onboarding não pode ser fechado clicando fora sem preencher — mas permitimos fechar e usar depois
+  overlay.querySelector('.icon-btn').addEventListener('click', () => {
+    db.settings.onboardingDone = true; save();
+  });
+}
+
+window.addEventListener('hashchange', render);
+render();
+
+return { render };
+})();
+  </script>
+</body>
+</html>

@@ -79,3 +79,12 @@ js/
 ```
 
 Sem dependências externas: HTML + CSS + JavaScript puro (ES modules).
+
+## Versão em arquivo único
+
+Para usar sem servidor (basta dar duplo clique no arquivo):
+
+```bash
+node tools/build-standalone.mjs
+# gera dist/meu-orcamento-inteligente.html com CSS e JS embutidos
+```
