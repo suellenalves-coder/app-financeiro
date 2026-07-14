@@ -1,7 +1,8 @@
 // Shell do app: navegação, seletor de mês, onboarding e roteamento.
 import { h, ymLabel, ymAdd } from './utils.js';
 import { db, ui, save } from './store.js';
-import { formModal, modal } from './ui.js';
+import { formModal, modal, toast } from './ui.js';
+import * as sync from './sync.js';
 
 import * as dashboard from './views/dashboard.js';
 import * as anual from './views/anual.js';
@@ -125,4 +126,5 @@ function showOnboarding() {
 }
 
 window.addEventListener('hashchange', render);
+sync.init(() => { toast('Dados atualizados a partir da nuvem.'); render(); });
 render();

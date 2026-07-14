@@ -9,7 +9,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 // Ordem respeitando dependências (cartoes antes de simulador/config).
 const MODULES = [
-  'js/utils.js', 'js/store.js', 'js/calc.js', 'js/charts.js', 'js/ui.js',
+  'js/utils.js', 'js/store.js', 'js/sync.js', 'js/calc.js', 'js/charts.js', 'js/ui.js',
   'js/views/dashboard.js', 'js/views/anual.js', 'js/views/receitas.js',
   'js/views/despesas.js', 'js/views/cartoes.js', 'js/views/recorrentes.js',
   'js/views/provisoes.js', 'js/views/investimentos.js', 'js/views/reembolsos.js',
@@ -32,12 +32,14 @@ function transform(path) {
     return `const ${what.replace(/\s+/g, ' ').replace(/(\w+) as (\w+)/g, '$1: $2')} = ${mod};`;
   });
 
-  // Coleta e remove os export
+  // Coleta e remove os export (inclui "export async function")
   const names = [];
-  code = code.replace(/^export (function|const|let) (\w+)/gm, (_, kind, name) => {
+  code = code.replace(/^export (async function|function|const|let) (\w+)/gm, (_, kind, name) => {
     names.push(name);
     return `${kind} ${name}`;
   });
+  const leftover = code.match(/^\s*export\b.*$/m);
+  if (leftover) throw new Error(`Export não tratado em ${path}: ${leftover[0].trim()}`);
 
   return `__m['${key}'] = (() => {\n${code}\nreturn { ${names.join(', ')} };\n})();`;
 }

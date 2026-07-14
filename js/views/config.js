@@ -4,6 +4,7 @@ import { db, save, add, update, remove, resetAll } from '../store.js';
 import { card, table, formModal, confirmModal, rowActions, toast, badge } from '../ui.js';
 import { generateInstallments } from './cartoes.js';
 import { addCard } from './cartoes.js';
+import * as sync from '../sync.js';
 
 export function render(el, rerender) {
   // ---- Metas financeiras ----
@@ -112,6 +113,9 @@ export function render(el, rerender) {
           ['🗑', () => confirmModal('Excluir esta regra?', () => { remove('rules', r.id); rerender(); }), 'Excluir']), right: true },
     ], db.rules, { empty: 'Nenhuma regra. As regras aceleram o cadastro sugerindo categorias automaticamente.' })));
 
+  // ---- Sincronização na nuvem (Supabase) ----
+  el.append(cloudCard(rerender));
+
   // ---- Dados ----
   el.append(card('💾 Dados',
     h('p', { class: 'stat-sub' }, 'Seus dados ficam salvos apenas neste navegador (localStorage). Faça backup regularmente.'),
@@ -137,6 +141,82 @@ export function render(el, rerender) {
       h('button', { class: 'btn btn-ghost btn-sm', onclick: () => loadSample(rerender) }, '✨ Carregar dados de exemplo'),
       h('button', { class: 'btn btn-danger btn-sm', onclick: () =>
         confirmModal('Apagar TODOS os dados e recomeçar do zero? Esta ação não pode ser desfeita.', () => { resetAll(); location.reload(); }) }, '🗑 Apagar tudo'))));
+}
+
+// Card de sincronização entre dispositivos via Supabase.
+function cloudCard(rerender) {
+  const status = h('div', { class: 'stat-sub', style: 'margin-bottom:10px' });
+  const refreshStatus = () => {
+    const s = sync.state;
+    if (sync.isLoggedIn()) {
+      status.innerHTML = '';
+      status.append(badge(s.status === 'erro' ? 'atrasado' : 'ativa'), ' ',
+        `Conectada como ${sync.userEmail()}.`,
+        s.lastSync ? ` Última sincronização: ${s.lastSync.toLocaleTimeString('pt-BR')}.` : '',
+        s.error ? ` Erro: ${s.error}` : '');
+    } else if (sync.isConfigured()) {
+      status.textContent = 'Projeto configurado. Entre com seu e-mail e senha para sincronizar.';
+    } else {
+      status.textContent = 'Sem sincronização: seus dados existem só neste navegador. Conecte um projeto Supabase para usar no celular e no computador ao mesmo tempo.';
+    }
+  };
+  refreshStatus();
+
+  const actions = [];
+  if (!sync.isConfigured()) {
+    actions.push(h('button', { class: 'btn btn-primary btn-sm', onclick: () =>
+      formModal('Conectar ao Supabase', [
+        { k: 'url', label: 'URL do projeto', type: 'text', required: true, full: true, placeholder: 'https://xxxx.supabase.co', help: 'Supabase → Settings → API → Project URL' },
+        { k: 'anonKey', label: 'Chave anon (public)', type: 'text', required: true, full: true, help: 'Supabase → Settings → API → anon public. Antes, rode o script supabase/schema.sql no SQL Editor.' },
+      ], {}, vals => {
+        if (!/^https:\/\/.+supabase\./.test(vals.url)) return 'A URL deve ser a do seu projeto, ex.: https://xxxx.supabase.co';
+        sync.setConfig(vals.url, vals.anonKey);
+        toast('Projeto conectado. Agora crie sua conta ou entre.');
+        rerender();
+      }, { saveLabel: 'Conectar' }) }, '🔗 Conectar projeto Supabase'));
+  } else if (!sync.isLoggedIn()) {
+    const loginFields = [
+      { k: 'email', label: 'E-mail', type: 'text', required: true },
+      { k: 'password', label: 'Senha (mín. 6 caracteres)', type: 'text', required: true },
+    ];
+    const doAuth = (fn, label) => formModal(label, loginFields, {}, vals => {
+      fn(vals.email, vals.password).then(res => {
+        if (res.confirm) { toast('Conta criada! Confirme pelo link enviado ao seu e-mail e depois clique em Entrar.'); rerender(); return; }
+        // Primeiro acesso neste aparelho: se a nuvem já tem dados, a usuária escolhe qual base manter.
+        sync.firstSync().then(r => {
+          if (r === 'nuvem-existe') {
+            confirmModal('Já existem dados salvos na nuvem. Deseja usá-los neste aparelho? (Escolher "Manter local" substitui a nuvem pelos dados deste navegador.)', () => {
+              sync.adoptRemote().then(() => { toast('Dados da nuvem carregados.'); rerender(); });
+            }, { yesLabel: 'Usar dados da nuvem', danger: false });
+            // botão Cancelar mantém o local; envia na próxima alteração
+            sync.state.status = 'conectado';
+          } else {
+            toast('Conectada! Dados enviados para a nuvem.');
+          }
+          rerender();
+        }).catch(e => { toast('Conectada, mas a sincronização falhou: ' + e.message); rerender(); });
+      }).catch(e => toast('Não foi possível: ' + e.message));
+    }, { saveLabel: label });
+    actions.push(
+      h('button', { class: 'btn btn-primary btn-sm', onclick: () => doAuth(sync.signIn, 'Entrar') }, '🔑 Entrar'),
+      h('button', { class: 'btn btn-secondary btn-sm', onclick: () => doAuth(sync.signUp, 'Criar conta') }, '＋ Criar conta'),
+      h('button', { class: 'btn btn-ghost btn-sm', onclick: () => { sync.disconnect(); rerender(); } }, 'Remover configuração'));
+  } else {
+    actions.push(
+      h('button', { class: 'btn btn-primary btn-sm', onclick: () => {
+        sync.syncNow().then(r => { toast(r.changed ? 'Dados atualizados a partir da nuvem.' : 'Dados enviados para a nuvem.'); rerender(); })
+          .catch(e => { toast('Falha ao sincronizar: ' + e.message); rerender(); });
+      } }, '🔄 Sincronizar agora'),
+      h('button', { class: 'btn btn-ghost btn-sm', onclick: () => { sync.signOut(); toast('Sessão encerrada. Os dados continuam neste navegador.'); rerender(); } }, 'Sair da conta'));
+  }
+
+  return card('☁️ Sincronização entre dispositivos (Supabase)',
+    status,
+    h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' }, actions),
+    h('p', { class: 'stat-sub', style: 'margin-top:10px' },
+      'Passo a passo: crie um projeto gratuito em supabase.com, rode o script ',
+      h('code', {}, 'supabase/schema.sql'),
+      ' no SQL Editor, copie a URL e a chave anon em Settings → API e conecte aqui. Use o mesmo e-mail e senha no celular e no computador.'));
 }
 
 // Dados de exemplo para conhecer o app.

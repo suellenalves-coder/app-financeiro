@@ -583,12 +583,27 @@ function load() {
   return defaults();
 }
 
+// Gancho chamado após cada save (usado pela sincronização na nuvem).
+let onSaveHook = null;
+function setOnSave(fn) { onSaveHook = fn; }
+
 function save() {
+  db._modified = Date.now();
+  localStorage.setItem(KEY, JSON.stringify(db));
+  if (onSaveHook) onSaveHook();
+}
+
+// Substitui todos os dados locais (ao baixar da nuvem), sem disparar novo envio.
+// Muta o objeto db existente para manter as referências dos demais módulos.
+function replaceDb(data) {
+  const novo = Object.assign(defaults(), data, { settings: Object.assign(defaults().settings, data.settings) });
+  for (const k of Object.keys(db)) delete db[k];
+  Object.assign(db, novo);
   localStorage.setItem(KEY, JSON.stringify(db));
 }
 
 function resetAll() {
-  db = defaults();
+  replaceDb(defaults());
   save();
 }
 
@@ -634,7 +649,217 @@ function applyRules(descricao) {
   return out;
 }
 
-return { CATEGORIAS_DESPESA, CATEGORIAS_RECEITA, TIPOS_RECEITA, STATUS_RECEITA, CLASSIFICACAO_DESPESA, STATUS_DESPESA, STATUS_REEMBOLSO, FORMAS_PAGAMENTO, PERIODICIDADES, TIPOS_INVESTIMENTO, OBJETIVOS_INVESTIMENTO, CRITERIOS_DIVISAO, CATEGORIAS_CARRO, db, save, resetAll, add, update, remove, get, ui, applyRules };
+return { CATEGORIAS_DESPESA, CATEGORIAS_RECEITA, TIPOS_RECEITA, STATUS_RECEITA, CLASSIFICACAO_DESPESA, STATUS_DESPESA, STATUS_REEMBOLSO, FORMAS_PAGAMENTO, PERIODICIDADES, TIPOS_INVESTIMENTO, OBJETIVOS_INVESTIMENTO, CRITERIOS_DIVISAO, CATEGORIAS_CARRO, db, setOnSave, save, replaceDb, resetAll, add, update, remove, get, ui, applyRules };
+})();
+
+__m['sync'] = (() => {
+// Sincronização na nuvem via Supabase (auth + tabela "orcamentos").
+// Estratégia: o documento inteiro (db) é salvo em uma linha por usuária, em jsonb.
+// Conflitos são resolvidos por "última gravação vence" (timestamp _modified).
+// A configuração (URL, chave, sessão) fica FORA dos dados sincronizados.
+const { db, save, replaceDb, setOnSave } = __m['store'];
+
+const CFG_KEY = 'meu-orcamento-inteligente:supabase';
+
+const state = {
+  status: 'off',       // off | configurado | conectado | sincronizando | erro
+  error: '',
+  lastSync: null,
+};
+
+let cfg = loadCfg();
+
+function loadCfg() {
+  try { return JSON.parse(localStorage.getItem(CFG_KEY)) || {}; } catch { return {}; }
+}
+function saveCfg() {
+  localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+}
+
+function getConfig() { return { url: cfg.url || '', anonKey: cfg.anonKey || '' }; }
+function isConfigured() { return !!(cfg.url && cfg.anonKey); }
+function isLoggedIn() { return !!(cfg.session && cfg.session.refresh_token); }
+function userEmail() { return cfg.session?.user?.email || ''; }
+
+function setConfig(url, anonKey) {
+  cfg.url = url.replace(/\/+$/, '');
+  cfg.anonKey = anonKey.trim();
+  saveCfg();
+  state.status = 'configurado';
+}
+
+function disconnect() {
+  cfg = {};
+  saveCfg();
+  state.status = 'off';
+  state.error = '';
+}
+
+function signOut() {
+  delete cfg.session;
+  saveCfg();
+  state.status = isConfigured() ? 'configurado' : 'off';
+}
+
+// ---- HTTP ----
+async function authFetch(path, options = {}) {
+  await refreshIfNeeded();
+  const headers = {
+    apikey: cfg.anonKey,
+    'Content-Type': 'application/json',
+    ...(cfg.session?.access_token ? { Authorization: `Bearer ${cfg.session.access_token}` } : {}),
+    ...(options.headers || {}),
+  };
+  const res = await fetch(`${cfg.url}${path}`, { ...options, headers });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { const j = await res.json(); msg = j.msg || j.message || j.error_description || j.error || msg; } catch { /* corpo vazio */ }
+    throw new Error(msg);
+  }
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
+async function refreshIfNeeded() {
+  const s = cfg.session;
+  if (!s || !s.refresh_token) return;
+  const expiresAt = (s.expires_at || 0) * 1000;
+  if (expiresAt - Date.now() > 60000) return;
+  const res = await fetch(`${cfg.url}/auth/v1/token?grant_type=refresh_token`, {
+    method: 'POST',
+    headers: { apikey: cfg.anonKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: s.refresh_token }),
+  });
+  if (!res.ok) { signOut(); throw new Error('Sessão expirou. Entre novamente.'); }
+  setSession(await res.json());
+}
+
+function setSession(data) {
+  cfg.session = {
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    expires_at: data.expires_at || Math.floor(Date.now() / 1000) + (data.expires_in || 3600),
+    user: { id: data.user?.id, email: data.user?.email },
+  };
+  saveCfg();
+}
+
+// ---- Autenticação ----
+async function signUp(email, password) {
+  const data = await authFetch('/auth/v1/signup', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+  if (data?.access_token) {
+    setSession(data);
+    state.status = 'conectado';
+    return { ok: true };
+  }
+  return { ok: true, confirm: true }; // projeto exige confirmação por e-mail
+}
+
+async function signIn(email, password) {
+  const data = await authFetch('/auth/v1/token?grant_type=password', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+  setSession(data);
+  state.status = 'conectado';
+  return { ok: true };
+}
+
+// ---- Dados ----
+async function fetchRemote() {
+  const rows = await authFetch('/rest/v1/orcamentos?select=dados,atualizado_em');
+  return rows && rows[0] ? rows[0] : null;
+}
+
+async function pushNow() {
+  if (!isLoggedIn()) return;
+  await authFetch('/rest/v1/orcamentos?on_conflict=user_id', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify([{
+      user_id: cfg.session.user.id,
+      dados: db,
+      atualizado_em: new Date().toISOString(),
+    }]),
+  });
+  state.lastSync = new Date();
+}
+
+// Primeiro login em um aparelho: se já existem dados na nuvem, quem decide é a usuária
+// (evita que o onboarding recém-feito sobrescreva a base real).
+async function firstSync() {
+  const remote = await fetchRemote();
+  if (!remote) { await pushNow(); return 'enviado'; }
+  return 'nuvem-existe';
+}
+
+async function adoptRemote() {
+  const remote = await fetchRemote();
+  if (remote) { replaceDb(remote.dados); state.lastSync = new Date(); }
+}
+
+// Sincroniza: baixa o remoto; se for mais novo que o local, substitui; senão, envia o local.
+async function syncNow() {
+  if (!isLoggedIn()) return { changed: false };
+  state.status = 'sincronizando';
+  state.error = '';
+  try {
+    const remote = await fetchRemote();
+    const localMod = Number(db._modified) || 0;
+    const remoteMod = remote ? Number(remote.dados?._modified) || Date.parse(remote.atualizado_em) || 0 : 0;
+    let changed = false;
+    if (remote && remoteMod > localMod) {
+      replaceDb(remote.dados);
+      changed = true;
+    } else {
+      await pushNow();
+    }
+    state.status = 'conectado';
+    state.lastSync = new Date();
+    return { changed };
+  } catch (e) {
+    state.status = 'erro';
+    state.error = e.message;
+    throw e;
+  }
+}
+
+// ---- Envio automático após cada alteração (com debounce) ----
+let pushTimer = null;
+function schedulePush() {
+  if (!isLoggedIn()) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => {
+    pushNow().then(() => { state.status = 'conectado'; state.error = ''; })
+      .catch(e => { state.status = 'erro'; state.error = e.message; });
+  }, 2000);
+}
+
+// Inicializa: registra o gancho de save e sincroniza ao abrir/voltar para o app.
+let lastFocusSync = 0;
+function init(onRemoteChange) {
+  setOnSave(schedulePush);
+  const trySync = () => syncNow()
+    .then(r => { if (r.changed && onRemoteChange) onRemoteChange(); })
+    .catch(() => { /* estado de erro já registrado */ });
+  // O listener fica sempre registrado: vale também para quem loga sem recarregar a página.
+  window.addEventListener('focus', () => {
+    if (!isLoggedIn() || Date.now() - lastFocusSync < 30000) return;
+    lastFocusSync = Date.now();
+    trySync();
+  });
+  if (!isLoggedIn()) {
+    state.status = isConfigured() ? 'configurado' : 'off';
+    return;
+  }
+  state.status = 'conectado';
+  trySync();
+}
+
+return { state, getConfig, isConfigured, isLoggedIn, userEmail, setConfig, disconnect, signOut, signUp, signIn, pushNow, firstSync, adoptRemote, syncNow, init };
 })();
 
 __m['calc'] = (() => {
@@ -3133,6 +3358,7 @@ const { db, save, add, update, remove, resetAll } = __m['store'];
 const { card, table, formModal, confirmModal, rowActions, toast, badge } = __m['ui'];
 const { generateInstallments } = __m['cartoes'];
 const { addCard } = __m['cartoes'];
+const sync = __m['sync'];
 
 function render(el, rerender) {
   // ---- Metas financeiras ----
@@ -3241,6 +3467,9 @@ function render(el, rerender) {
           ['🗑', () => confirmModal('Excluir esta regra?', () => { remove('rules', r.id); rerender(); }), 'Excluir']), right: true },
     ], db.rules, { empty: 'Nenhuma regra. As regras aceleram o cadastro sugerindo categorias automaticamente.' })));
 
+  // ---- Sincronização na nuvem (Supabase) ----
+  el.append(cloudCard(rerender));
+
   // ---- Dados ----
   el.append(card('💾 Dados',
     h('p', { class: 'stat-sub' }, 'Seus dados ficam salvos apenas neste navegador (localStorage). Faça backup regularmente.'),
@@ -3266,6 +3495,82 @@ function render(el, rerender) {
       h('button', { class: 'btn btn-ghost btn-sm', onclick: () => loadSample(rerender) }, '✨ Carregar dados de exemplo'),
       h('button', { class: 'btn btn-danger btn-sm', onclick: () =>
         confirmModal('Apagar TODOS os dados e recomeçar do zero? Esta ação não pode ser desfeita.', () => { resetAll(); location.reload(); }) }, '🗑 Apagar tudo'))));
+}
+
+// Card de sincronização entre dispositivos via Supabase.
+function cloudCard(rerender) {
+  const status = h('div', { class: 'stat-sub', style: 'margin-bottom:10px' });
+  const refreshStatus = () => {
+    const s = sync.state;
+    if (sync.isLoggedIn()) {
+      status.innerHTML = '';
+      status.append(badge(s.status === 'erro' ? 'atrasado' : 'ativa'), ' ',
+        `Conectada como ${sync.userEmail()}.`,
+        s.lastSync ? ` Última sincronização: ${s.lastSync.toLocaleTimeString('pt-BR')}.` : '',
+        s.error ? ` Erro: ${s.error}` : '');
+    } else if (sync.isConfigured()) {
+      status.textContent = 'Projeto configurado. Entre com seu e-mail e senha para sincronizar.';
+    } else {
+      status.textContent = 'Sem sincronização: seus dados existem só neste navegador. Conecte um projeto Supabase para usar no celular e no computador ao mesmo tempo.';
+    }
+  };
+  refreshStatus();
+
+  const actions = [];
+  if (!sync.isConfigured()) {
+    actions.push(h('button', { class: 'btn btn-primary btn-sm', onclick: () =>
+      formModal('Conectar ao Supabase', [
+        { k: 'url', label: 'URL do projeto', type: 'text', required: true, full: true, placeholder: 'https://xxxx.supabase.co', help: 'Supabase → Settings → API → Project URL' },
+        { k: 'anonKey', label: 'Chave anon (public)', type: 'text', required: true, full: true, help: 'Supabase → Settings → API → anon public. Antes, rode o script supabase/schema.sql no SQL Editor.' },
+      ], {}, vals => {
+        if (!/^https:\/\/.+supabase\./.test(vals.url)) return 'A URL deve ser a do seu projeto, ex.: https://xxxx.supabase.co';
+        sync.setConfig(vals.url, vals.anonKey);
+        toast('Projeto conectado. Agora crie sua conta ou entre.');
+        rerender();
+      }, { saveLabel: 'Conectar' }) }, '🔗 Conectar projeto Supabase'));
+  } else if (!sync.isLoggedIn()) {
+    const loginFields = [
+      { k: 'email', label: 'E-mail', type: 'text', required: true },
+      { k: 'password', label: 'Senha (mín. 6 caracteres)', type: 'text', required: true },
+    ];
+    const doAuth = (fn, label) => formModal(label, loginFields, {}, vals => {
+      fn(vals.email, vals.password).then(res => {
+        if (res.confirm) { toast('Conta criada! Confirme pelo link enviado ao seu e-mail e depois clique em Entrar.'); rerender(); return; }
+        // Primeiro acesso neste aparelho: se a nuvem já tem dados, a usuária escolhe qual base manter.
+        sync.firstSync().then(r => {
+          if (r === 'nuvem-existe') {
+            confirmModal('Já existem dados salvos na nuvem. Deseja usá-los neste aparelho? (Escolher "Manter local" substitui a nuvem pelos dados deste navegador.)', () => {
+              sync.adoptRemote().then(() => { toast('Dados da nuvem carregados.'); rerender(); });
+            }, { yesLabel: 'Usar dados da nuvem', danger: false });
+            // botão Cancelar mantém o local; envia na próxima alteração
+            sync.state.status = 'conectado';
+          } else {
+            toast('Conectada! Dados enviados para a nuvem.');
+          }
+          rerender();
+        }).catch(e => { toast('Conectada, mas a sincronização falhou: ' + e.message); rerender(); });
+      }).catch(e => toast('Não foi possível: ' + e.message));
+    }, { saveLabel: label });
+    actions.push(
+      h('button', { class: 'btn btn-primary btn-sm', onclick: () => doAuth(sync.signIn, 'Entrar') }, '🔑 Entrar'),
+      h('button', { class: 'btn btn-secondary btn-sm', onclick: () => doAuth(sync.signUp, 'Criar conta') }, '＋ Criar conta'),
+      h('button', { class: 'btn btn-ghost btn-sm', onclick: () => { sync.disconnect(); rerender(); } }, 'Remover configuração'));
+  } else {
+    actions.push(
+      h('button', { class: 'btn btn-primary btn-sm', onclick: () => {
+        sync.syncNow().then(r => { toast(r.changed ? 'Dados atualizados a partir da nuvem.' : 'Dados enviados para a nuvem.'); rerender(); })
+          .catch(e => { toast('Falha ao sincronizar: ' + e.message); rerender(); });
+      } }, '🔄 Sincronizar agora'),
+      h('button', { class: 'btn btn-ghost btn-sm', onclick: () => { sync.signOut(); toast('Sessão encerrada. Os dados continuam neste navegador.'); rerender(); } }, 'Sair da conta'));
+  }
+
+  return card('☁️ Sincronização entre dispositivos (Supabase)',
+    status,
+    h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' }, actions),
+    h('p', { class: 'stat-sub', style: 'margin-top:10px' },
+      'Passo a passo: crie um projeto gratuito em supabase.com, rode o script ',
+      h('code', {}, 'supabase/schema.sql'),
+      ' no SQL Editor, copie a URL e a chave anon em Settings → API e conecte aqui. Use o mesmo e-mail e senha no celular e no computador.'));
 }
 
 // Dados de exemplo para conhecer o app.
@@ -3315,7 +3620,8 @@ __m['app'] = (() => {
 // Shell do app: navegação, seletor de mês, onboarding e roteamento.
 const { h, ymLabel, ymAdd } = __m['utils'];
 const { db, ui, save } = __m['store'];
-const { formModal, modal } = __m['ui'];
+const { formModal, modal, toast } = __m['ui'];
+const sync = __m['sync'];
 
 const dashboard = __m['dashboard'];
 const anual = __m['anual'];
@@ -3439,6 +3745,7 @@ function showOnboarding() {
 }
 
 window.addEventListener('hashchange', render);
+sync.init(() => { toast('Dados atualizados a partir da nuvem.'); render(); });
 render();
 
 return { render };

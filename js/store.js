@@ -117,12 +117,27 @@ function load() {
   return defaults();
 }
 
+// Gancho chamado após cada save (usado pela sincronização na nuvem).
+let onSaveHook = null;
+export function setOnSave(fn) { onSaveHook = fn; }
+
 export function save() {
+  db._modified = Date.now();
+  localStorage.setItem(KEY, JSON.stringify(db));
+  if (onSaveHook) onSaveHook();
+}
+
+// Substitui todos os dados locais (ao baixar da nuvem), sem disparar novo envio.
+// Muta o objeto db existente para manter as referências dos demais módulos.
+export function replaceDb(data) {
+  const novo = Object.assign(defaults(), data, { settings: Object.assign(defaults().settings, data.settings) });
+  for (const k of Object.keys(db)) delete db[k];
+  Object.assign(db, novo);
   localStorage.setItem(KEY, JSON.stringify(db));
 }
 
 export function resetAll() {
-  db = defaults();
+  replaceDb(defaults());
   save();
 }
 

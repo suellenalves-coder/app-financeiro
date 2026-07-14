@@ -80,6 +80,46 @@ js/
 
 Sem dependências externas: HTML + CSS + JavaScript puro (ES modules).
 
+## Sincronização entre celular e computador (Supabase)
+
+O Supabase fornece o **banco de dados na nuvem** (com login por e-mail e senha);
+a hospedagem do app fica no GitHub Pages. Com os dois configurados, os mesmos dados
+aparecem em todos os seus aparelhos.
+
+### Parte 1 — criar o banco no Supabase (5 minutos, grátis)
+
+1. Crie uma conta em [supabase.com](https://supabase.com) e clique em **New project**
+   (escolha um nome, uma senha do banco e a região `South America (São Paulo)`).
+2. No menu lateral, abra **SQL Editor → New query**, cole o conteúdo do arquivo
+   [`supabase/schema.sql`](supabase/schema.sql) deste repositório e clique em **Run**.
+3. Ainda no Supabase, vá em **Settings → API** e copie dois valores:
+   - **Project URL** (ex.: `https://abcdefgh.supabase.co`)
+   - **anon public** (a chave pública — pode ficar no app, a segurança vem das
+     políticas RLS criadas no passo 2)
+4. (Opcional) Em **Authentication → Providers → Email**, desative
+   *Confirm email* se não quiser precisar clicar no link de confirmação.
+
+### Parte 2 — hospedar o app no GitHub Pages (grátis)
+
+1. No GitHub, abra o repositório → **Settings → Pages**.
+2. Em *Build and deployment*, escolha **Deploy from a branch**, selecione a branch
+   principal e a pasta `/ (root)` e salve.
+3. Em ~1 minuto o app estará no ar em `https://SEU-USUARIO.github.io/app-financeiro/`.
+   Abra esse endereço no computador **e** no celular (dá até para "Adicionar à tela
+   inicial" no celular, que vira um ícone de app).
+
+### Parte 3 — conectar o app ao banco
+
+1. No app, abra **Configurações → ☁️ Sincronização entre dispositivos**.
+2. Clique em **Conectar projeto Supabase** e cole a URL e a chave anon.
+3. Clique em **Criar conta** (uma vez só) e depois **Entrar** com e-mail e senha.
+4. Repita o login nos outros aparelhos, com o mesmo e-mail: o app detecta os dados
+   da nuvem e pergunta se quer usá-los.
+
+A partir daí a sincronização é automática: cada alteração é enviada ~2 s depois,
+e ao voltar para o app ele busca novidades da nuvem. Também há o botão
+**Sincronizar agora** nas Configurações.
+
 ## Versão em arquivo único
 
 Para usar sem servidor (basta dar duplo clique no arquivo):
