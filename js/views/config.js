@@ -1,7 +1,7 @@
 // Configurações: metas, categorias, bancos, pessoas, regras e dados.
 import { h, fmt, downloadFile, todayISO, ymNow, ymAdd, uid } from '../utils.js';
 import { db, save, add, update, remove, resetAll } from '../store.js';
-import { card, table, formModal, confirmModal, rowActions, toast, badge } from '../ui.js';
+import { card, table, formModal, confirmModal, rowActions, toast, badge, modal } from '../ui.js';
 import { generateInstallments } from './cartoes.js';
 import { addCard } from './cartoes.js';
 import * as sync from '../sync.js';
@@ -166,12 +166,12 @@ function cloudCard(rerender) {
   if (!sync.isConfigured()) {
     actions.push(h('button', { class: 'btn btn-primary btn-sm', onclick: () =>
       formModal('Conectar ao Supabase', [
-        { k: 'url', label: 'URL do projeto', type: 'text', required: true, full: true, placeholder: 'https://xxxx.supabase.co', help: 'Supabase → Settings → API → Project URL' },
-        { k: 'anonKey', label: 'Chave anon (public)', type: 'text', required: true, full: true, help: 'Supabase → Settings → API → anon public. Antes, rode o script supabase/schema.sql no SQL Editor.' },
+        { k: 'url', label: 'ID do projeto ou URL', type: 'text', required: true, full: true, placeholder: 'ex.: fsclryvylknuooayreet ou https://xxxx.supabase.co', help: 'Supabase → Settings → General → Project ID (ou a Project URL em Settings → API).' },
+        { k: 'anonKey', label: 'Chave anon (public)', type: 'text', required: true, full: true, help: 'Supabase → Settings → API → anon public (texto longo começando com "eyJ"). Antes, rode o script supabase/schema.sql no SQL Editor.' },
       ], {}, vals => {
-        if (!/^https:\/\/.+supabase\./.test(vals.url)) return 'A URL deve ser a do seu projeto, ex.: https://xxxx.supabase.co';
+        if (!sync.normalizeUrl(vals.url)) return 'Informe o ID do projeto (letras/números) ou a URL completa https://xxxx.supabase.co';
         sync.setConfig(vals.url, vals.anonKey);
-        toast('Projeto conectado. Agora crie sua conta ou entre.');
+        toast('Projeto configurado. Teste a configuração ou crie sua conta.');
         rerender();
       }, { saveLabel: 'Conectar' }) }, '🔗 Conectar projeto Supabase'));
   } else if (!sync.isLoggedIn()) {
@@ -210,6 +210,10 @@ function cloudCard(rerender) {
       h('button', { class: 'btn btn-ghost btn-sm', onclick: () => { sync.signOut(); toast('Sessão encerrada. Os dados continuam neste navegador.'); rerender(); } }, 'Sair da conta'));
   }
 
+  if (sync.isConfigured()) {
+    actions.push(h('button', { class: 'btn btn-ghost btn-sm', onclick: () => testSetupModal() }, '🔍 Testar configuração'));
+  }
+
   return card('☁️ Sincronização entre dispositivos (Supabase)',
     status,
     h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' }, actions),
@@ -217,6 +221,25 @@ function cloudCard(rerender) {
       'Passo a passo: crie um projeto gratuito em supabase.com, rode o script ',
       h('code', {}, 'supabase/schema.sql'),
       ' no SQL Editor, copie a URL e a chave anon em Settings → API e conecte aqui. Use o mesmo e-mail e senha no celular e no computador.'));
+}
+
+// Modal com o resultado do diagnóstico da configuração do Supabase.
+function testSetupModal() {
+  const body = h('div', {}, h('p', { class: 'stat-sub' }, 'Verificando sua configuração…'));
+  modal('Diagnóstico da sincronização', body);
+  sync.testSetup().then(checks => {
+    body.innerHTML = '';
+    body.append(...checks.map(c => h('div', { class: 'check-item' },
+      h('span', { class: 'check-mark' }, c.ok ? '✅' : '❌'),
+      h('div', {}, h('b', {}, c.label), c.detail ? h('div', { class: 'stat-sub' }, c.detail) : null))));
+    const pendentes = checks.filter(c => !c.ok).length;
+    body.append(h('p', { class: 'stat-sub', style: 'margin-top:12px' },
+      pendentes === 0
+        ? 'Tudo certo! Seus dados já sincronizam entre os aparelhos. 🎉'
+        : `Falta${pendentes > 1 ? 'm' : ''} ${pendentes} passo${pendentes > 1 ? 's' : ''} — resolva na ordem acima e teste de novo.`));
+  }).catch(e => {
+    body.textContent = 'Não foi possível executar o teste: ' + e.message;
+  });
 }
 
 // Dados de exemplo para conhecer o app.
