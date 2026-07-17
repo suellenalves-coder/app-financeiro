@@ -6,6 +6,14 @@ import { db, save, replaceDb, setOnSave } from './store.js';
 
 const CFG_KEY = 'meu-orcamento-inteligente:supabase';
 
+// Projeto Supabase padrão, já embutido no app: nenhum aparelho precisa digitar
+// URL ou chave — basta entrar com e-mail e senha. A chave anon é pública por
+// design; a proteção dos dados vem das políticas RLS (ver supabase/schema.sql).
+const DEFAULT_PROJECT = {
+  url: 'https://fsclryvylknuooayreet.supabase.co',
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzY2xyeXZ5bGtudW9vYXlyZWV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxMTc0MzgsImV4cCI6MjA5OTY5MzQzOH0.msM-JkMy_3q8L_V359ISASeLqEWSOCsg4JPpXjDRCC0',
+};
+
 export const state = {
   status: 'off',       // off | configurado | conectado | sincronizando | erro
   error: '',
@@ -15,7 +23,13 @@ export const state = {
 let cfg = loadCfg();
 
 function loadCfg() {
-  try { return JSON.parse(localStorage.getItem(CFG_KEY)) || {}; } catch { return {}; }
+  try {
+    const raw = localStorage.getItem(CFG_KEY);
+    // Nada salvo ainda → usa o projeto embutido. Se a usuária remover a
+    // configuração de propósito, fica salvo {} e os padrões não voltam sozinhos.
+    if (raw === null) return { ...DEFAULT_PROJECT };
+    return JSON.parse(raw) || {};
+  } catch { return { ...DEFAULT_PROJECT }; }
 }
 function saveCfg() {
   localStorage.setItem(CFG_KEY, JSON.stringify(cfg));

@@ -671,6 +671,14 @@ const { db, save, replaceDb, setOnSave } = __m['store'];
 
 const CFG_KEY = 'meu-orcamento-inteligente:supabase';
 
+// Projeto Supabase padrão, já embutido no app: nenhum aparelho precisa digitar
+// URL ou chave — basta entrar com e-mail e senha. A chave anon é pública por
+// design; a proteção dos dados vem das políticas RLS (ver supabase/schema.sql).
+const DEFAULT_PROJECT = {
+  url: 'https://fsclryvylknuooayreet.supabase.co',
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzY2xyeXZ5bGtudW9vYXlyZWV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxMTc0MzgsImV4cCI6MjA5OTY5MzQzOH0.msM-JkMy_3q8L_V359ISASeLqEWSOCsg4JPpXjDRCC0',
+};
+
 const state = {
   status: 'off',       // off | configurado | conectado | sincronizando | erro
   error: '',
@@ -680,7 +688,13 @@ const state = {
 let cfg = loadCfg();
 
 function loadCfg() {
-  try { return JSON.parse(localStorage.getItem(CFG_KEY)) || {}; } catch { return {}; }
+  try {
+    const raw = localStorage.getItem(CFG_KEY);
+    // Nada salvo ainda → usa o projeto embutido. Se a usuária remover a
+    // configuração de propósito, fica salvo {} e os padrões não voltam sozinhos.
+    if (raw === null) return { ...DEFAULT_PROJECT };
+    return JSON.parse(raw) || {};
+  } catch { return { ...DEFAULT_PROJECT }; }
 }
 function saveCfg() {
   localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
@@ -3685,7 +3699,7 @@ function cloudCard(rerender) {
         s.lastSync ? ` Última sincronização: ${s.lastSync.toLocaleTimeString('pt-BR')}.` : '',
         s.error ? ` Erro: ${s.error}` : '');
     } else if (sync.isConfigured()) {
-      status.textContent = 'Projeto configurado. Entre com seu e-mail e senha para sincronizar.';
+      status.textContent = 'Projeto já configurado (embutido no app). Só falta entrar: use "Criar conta" na primeira vez e depois "Entrar" com o mesmo e-mail e senha em todos os aparelhos.';
     } else {
       status.textContent = 'Sem sincronização: seus dados existem só neste navegador. Conecte um projeto Supabase para usar no celular e no computador ao mesmo tempo.';
     }

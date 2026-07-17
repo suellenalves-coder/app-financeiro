@@ -155,7 +155,7 @@ function cloudCard(rerender) {
         s.lastSync ? ` Última sincronização: ${s.lastSync.toLocaleTimeString('pt-BR')}.` : '',
         s.error ? ` Erro: ${s.error}` : '');
     } else if (sync.isConfigured()) {
-      status.textContent = 'Projeto configurado. Entre com seu e-mail e senha para sincronizar.';
+      status.textContent = 'Projeto já configurado (embutido no app). Só falta entrar: use "Criar conta" na primeira vez e depois "Entrar" com o mesmo e-mail e senha em todos os aparelhos.';
     } else {
       status.textContent = 'Sem sincronização: seus dados existem só neste navegador. Conecte um projeto Supabase para usar no celular e no computador ao mesmo tempo.';
     }
