@@ -1,0 +1,20 @@
+# Netlify: site estático, sem etapa de build — publica a raiz do repositório.
+[build]
+  publish = "."
+  command = ""
+
+# Cache leve para os assets; o HTML sempre revalida (atualizações chegam na hora).
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/css/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
+
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"

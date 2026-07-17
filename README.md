@@ -99,7 +99,23 @@ aparecem em todos os seus aparelhos.
 4. (Opcional) Em **Authentication → Providers → Email**, desative
    *Confirm email* se não quiser precisar clicar no link de confirmação.
 
-### Parte 2 — hospedar o app no GitHub Pages (grátis)
+### Parte 2 — hospedar o app (grátis: Netlify ou GitHub Pages)
+
+**Opção A — Netlify (recomendada, com deploy automático):**
+
+1. Crie uma conta em [app.netlify.com](https://app.netlify.com) (pode entrar com o GitHub).
+2. Clique em **Add new project → Import an existing project → GitHub** e escolha o
+   repositório `app-financeiro` (e a branch desejada).
+3. O `netlify.toml` do repositório já configura tudo (site estático, sem build) —
+   basta clicar em **Deploy**. O app fica em `https://SEU-SITE.netlify.app`, e cada
+   `git push` republica sozinho.
+
+**Opção A2 — Netlify sem GitHub (arrastar e soltar):** acesse
+[app.netlify.com/drop](https://app.netlify.com/drop) e arraste o zip do site
+(gere com `zip -r site.zip index.html css js` ou use o zip pronto). Simples,
+mas as atualizações futuras exigem arrastar de novo.
+
+**Opção B — GitHub Pages:**
 
 1. No GitHub, abra o repositório → **Settings → Pages**.
 2. Em *Build and deployment*, escolha **Deploy from a branch**, selecione a branch
