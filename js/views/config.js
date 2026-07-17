@@ -143,6 +143,29 @@ export function render(el, rerender) {
         confirmModal('Apagar TODOS os dados e recomeçar do zero? Esta ação não pode ser desfeita.', () => { resetAll(); location.reload(); }) }, '🗑 Apagar tudo'))));
 }
 
+// Login/criação de conta reutilizável — usado no card de sincronização e no
+// onboarding (para quem já usa o app em outro aparelho entrar direto, sem
+// preencher a renda de novo e criar uma base local divergente).
+export function loginPrompt(onDone) {
+  const loginFields = [
+    { k: 'email', label: 'E-mail', type: 'text', required: true },
+    { k: 'password', label: 'Senha (mín. 6 caracteres)', type: 'text', required: true },
+  ];
+  const doAuth = (fn, label) => formModal(label, loginFields, {}, vals => {
+    fn(vals.email, vals.password).then(res => {
+      if (res.confirm) { toast('Conta criada! Confirme pelo link enviado ao seu e-mail e depois clique em Entrar.'); onDone?.(); return; }
+      // Mescla automática: os lançamentos deste aparelho e os da nuvem são unidos.
+      sync.firstSync().then(r => {
+        toast(r === 'mesclado'
+          ? 'Conectada! Os dados deste aparelho e os da nuvem foram unidos.'
+          : 'Conectada! Dados enviados para a nuvem.');
+        onDone?.();
+      }).catch(e => { toast('Conectada, mas a sincronização falhou: ' + e.message); onDone?.(); });
+    }).catch(e => toast('Não foi possível: ' + e.message));
+  }, { saveLabel: label });
+  return { entrar: () => doAuth(sync.signIn, 'Entrar'), criar: () => doAuth(sync.signUp, 'Criar conta') };
+}
+
 // Card de sincronização entre dispositivos via Supabase.
 function cloudCard(rerender) {
   const status = h('div', { class: 'stat-sub', style: 'margin-bottom:10px' });
@@ -182,25 +205,9 @@ function cloudCard(rerender) {
         rerender();
       }, { saveLabel: 'Conectar' }) }, '🔗 Conectar projeto Supabase'));
   } else if (!sync.isLoggedIn()) {
-    const loginFields = [
-      { k: 'email', label: 'E-mail', type: 'text', required: true },
-      { k: 'password', label: 'Senha (mín. 6 caracteres)', type: 'text', required: true },
-    ];
-    const doAuth = (fn, label) => formModal(label, loginFields, {}, vals => {
-      fn(vals.email, vals.password).then(res => {
-        if (res.confirm) { toast('Conta criada! Confirme pelo link enviado ao seu e-mail e depois clique em Entrar.'); rerender(); return; }
-        // Mescla automática: os lançamentos deste aparelho e os da nuvem são unidos.
-        sync.firstSync().then(r => {
-          toast(r === 'mesclado'
-            ? 'Conectada! Os dados deste aparelho e os da nuvem foram unidos.'
-            : 'Conectada! Dados enviados para a nuvem.');
-          rerender();
-        }).catch(e => { toast('Conectada, mas a sincronização falhou: ' + e.message); rerender(); });
-      }).catch(e => toast('Não foi possível: ' + e.message));
-    }, { saveLabel: label });
     actions.push(
-      h('button', { class: 'btn btn-primary btn-sm', onclick: () => doAuth(sync.signIn, 'Entrar') }, '🔑 Entrar'),
-      h('button', { class: 'btn btn-secondary btn-sm', onclick: () => doAuth(sync.signUp, 'Criar conta') }, '＋ Criar conta'),
+      h('button', { class: 'btn btn-primary btn-sm', onclick: () => loginPrompt(rerender).entrar() }, '🔑 Entrar'),
+      h('button', { class: 'btn btn-secondary btn-sm', onclick: () => loginPrompt(rerender).criar() }, '＋ Criar conta'),
       h('button', { class: 'btn btn-ghost btn-sm', onclick: () => { sync.disconnect(); rerender(); } }, 'Remover configuração'));
   } else {
     actions.push(

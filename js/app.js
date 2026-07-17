@@ -89,6 +89,27 @@ function monthPicker() {
 }
 
 function showOnboarding() {
+  // Aparelho que já tem conta em outro lugar: pular o formulário de renda e
+  // ir direto para o login evita criar uma base local que depois diverge da nuvem.
+  if (sync.isConfigured() && !sync.isLoggedIn()) {
+    const already = modal('Bem-vinda de volta 🌿', h('div', {},
+      h('p', {}, 'Você já usa o Meu Orçamento Inteligente em outro aparelho?'),
+      h('div', { class: 'modal-actions', style: 'justify-content:flex-start' },
+        h('button', {
+          class: 'btn btn-primary', onclick: () => {
+            already.remove();
+            config.loginPrompt(render).entrar();
+          },
+        }, '🔑 Sim, já tenho conta — Entrar'),
+        h('button', {
+          class: 'btn btn-ghost', onclick: () => { already.remove(); showOnboardingForm(); },
+        }, 'Não, é meu primeiro acesso'))));
+    return;
+  }
+  showOnboardingForm();
+}
+
+function showOnboardingForm() {
   const steps = [
     ['Informe sua renda segura mensal e suas metas', null],
     ['Cadastre seus bancos e cartões', '#/config'],
