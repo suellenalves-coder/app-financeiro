@@ -1,7 +1,7 @@
 // Despesas avulsas: cadastro completo, pagamento rápido, duplicação e filtros.
 import { h, fmt, todayISO, sum, uid } from '../utils.js';
 import {
-  db, ui, add, update, remove, save, applyRules,
+  db, ui, add, update, remove, removeWhere, save, applyRules,
   CLASSIFICACAO_DESPESA, STATUS_DESPESA, FORMAS_PAGAMENTO,
 } from '../store.js';
 import { monthExpenses, expenseNet } from '../calc.js';
@@ -60,7 +60,7 @@ export function syncReimbursement(exp) {
       });
     }
   } else if (existing && ['pendente', 'solicitado'].includes(existing.status)) {
-    db.reimbursements = db.reimbursements.filter(r => r !== existing);
+    removeWhere('reimbursements', r => r === existing);
   }
   save();
 }
@@ -149,7 +149,7 @@ function actions(e, rerender) {
       formModal('Duplicar despesa', fields(), copy, vals => { saveExpense(vals); toast('Despesa duplicada.'); rerender(); }, { wide: true });
     }, 'Duplicar'],
     ['🗑', () => confirmModal(`Excluir a despesa "${e.descricao}"?`, () => {
-      db.reimbursements = db.reimbursements.filter(r => r.expenseId !== e.id);
+      removeWhere('reimbursements', r => r.expenseId === e.id);
       remove('expenses', e.id);
       rerender();
     }), 'Excluir']);

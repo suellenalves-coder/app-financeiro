@@ -41,6 +41,52 @@ export function setConfig(url, anonKey) {
   state.status = 'configurado';
 }
 
+// ---- Link para conectar outro aparelho ----
+// Gera um endereço que já leva a URL e a chave anon embutidas (nunca a sessão/senha).
+// Codificação em base64 url-safe para caber no hash sem escapar caracteres.
+export function buildConnectLink() {
+  if (!isConfigured()) return '';
+  const payload = b64encode(JSON.stringify({ u: cfg.url, k: cfg.anonKey }));
+  const base = location.href.split('#')[0];
+  return `${base}#/config?conectar=${payload}`;
+}
+
+// Extrai a configuração de um link de conexão colado (ou retorna null).
+export function parseConnectInput(text) {
+  const m = String(text || '').match(/conectar=([A-Za-z0-9_\-%]+)/);
+  if (!m) return null;
+  try {
+    const { u, k } = JSON.parse(b64decode(decodeURIComponent(m[1])));
+    if (u && k) return { url: u, anonKey: k };
+  } catch { /* link inválido */ }
+  return null;
+}
+
+// Lê o parâmetro "conectar" do hash e aplica a configuração. Retorna true se aplicou.
+export function applyConnectFromHash() {
+  const m = (location.hash || '').match(/[?&]conectar=([^&]+)/);
+  if (!m) return false;
+  try {
+    const { u, k } = JSON.parse(b64decode(decodeURIComponent(m[1])));
+    if (u && k) {
+      setConfig(u, k);
+      // Limpa o parâmetro da URL, preservando a rota.
+      const rota = (location.hash.split('?')[0]) || '#/config';
+      history.replaceState(null, '', location.pathname + location.search + rota);
+      return true;
+    }
+  } catch { /* link inválido */ }
+  return false;
+}
+
+function b64encode(str) {
+  return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function b64decode(str) {
+  const s = str.replace(/-/g, '+').replace(/_/g, '/');
+  return decodeURIComponent(escape(atob(s)));
+}
+
 // Diagnóstico da configuração: roda no navegador da usuária e informa o que falta.
 export async function testSetup(url = cfg.url, anonKey = cfg.anonKey) {
   const checks = [];
@@ -196,35 +242,92 @@ export async function pushNow() {
   state.lastSync = new Date();
 }
 
-// Primeiro login em um aparelho: se já existem dados na nuvem, quem decide é a usuária
-// (evita que o onboarding recém-feito sobrescreva a base real).
+// ---- Mesclagem (merge) ----
+// Nada é apagado por sincronizar: os lançamentos dos dois lados são unidos item a item
+// (cada item tem id único). Para o MESMO item alterado nos dois lados, vence o que tem
+// _ts mais recente. Exclusões viajam como tombstones em _deleted, para não ressuscitar.
+const COLLECTIONS = [
+  'banks', 'categoriesExpense', 'categoriesIncome', 'people', 'cards',
+  'incomes', 'expenses', 'purchases', 'installments', 'recurring',
+  'provisions', 'provisionDeposits', 'investments', 'investContrib',
+  'reimbursements', 'rules',
+];
+
+function mergeById(a, b, deleted, bWinsTies) {
+  const map = new Map();
+  const putAll = (list, winsTies) => {
+    for (const item of list || []) {
+      if (!item || !item.id || deleted[item.id]) continue;
+      const cur = map.get(item.id);
+      if (!cur) { map.set(item.id, item); continue; }
+      const tsCur = Number(cur._ts) || 0;
+      const tsNew = Number(item._ts) || 0;
+      if (tsNew > tsCur || (tsNew === tsCur && winsTies)) map.set(item.id, item);
+    }
+  };
+  putAll(a, !bWinsTies);
+  putAll(b, bWinsTies);
+  return [...map.values()];
+}
+
+// Catálogos referenciados por NOME (não por id) podem ser deduplicados com segurança —
+// evita "XP" em dobro quando os dois aparelhos fizeram o onboarding separadamente.
+function dedupeByName(list, keyFn) {
+  const seen = new Map();
+  for (const item of list) {
+    const key = keyFn(item).trim().toLowerCase();
+    const cur = seen.get(key);
+    if (!cur) seen.set(key, item);
+    else if (Array.isArray(cur.sub) && Array.isArray(item.sub)) {
+      cur.sub = [...new Set([...cur.sub, ...item.sub])];
+    }
+  }
+  return [...seen.values()];
+}
+
+export function mergeDb(local, remote) {
+  const remoteNewer = (Number(remote._modified) || 0) > (Number(local._modified) || 0);
+  const newer = remoteNewer ? remote : local;
+  const older = remoteNewer ? local : remote;
+  const deleted = { ...(local._deleted || {}), ...(remote._deleted || {}) };
+
+  const merged = { ...older, ...newer };
+  merged.settings = { ...(older.settings || {}), ...(newer.settings || {}) };
+  merged.recurringOcc = { ...(older.recurringOcc || {}), ...(newer.recurringOcc || {}) };
+  merged._deleted = deleted;
+  merged._modified = Math.max(Number(local._modified) || 0, Number(remote._modified) || 0);
+
+  for (const coll of COLLECTIONS) {
+    merged[coll] = mergeById(local[coll], remote[coll], deleted, remoteNewer);
+  }
+  merged.banks = dedupeByName(merged.banks, b => b.nome || '');
+  merged.categoriesExpense = dedupeByName(merged.categoriesExpense, c => c.nome || '');
+  merged.categoriesIncome = dedupeByName(merged.categoriesIncome, c => c.nome || '');
+  merged.rules = dedupeByName(merged.rules, r => `${r.contem}|${r.acao}|${r.valor}`);
+  return merged;
+}
+
+// Primeiro login em um aparelho: mescla automaticamente com o que existe na nuvem —
+// nenhum dos lados apaga o outro.
 export async function firstSync() {
-  const remote = await fetchRemote();
-  if (!remote) { await pushNow(); return 'enviado'; }
-  return 'nuvem-existe';
+  const r = await syncNow();
+  return r.changed ? 'mesclado' : 'enviado';
 }
 
-export async function adoptRemote() {
-  const remote = await fetchRemote();
-  if (remote) { replaceDb(remote.dados); state.lastSync = new Date(); }
-}
-
-// Sincroniza: baixa o remoto; se for mais novo que o local, substitui; senão, envia o local.
+// Sincroniza: baixa o remoto, mescla com o local e envia o resultado.
 export async function syncNow() {
   if (!isLoggedIn()) return { changed: false };
   state.status = 'sincronizando';
   state.error = '';
   try {
     const remote = await fetchRemote();
-    const localMod = Number(db._modified) || 0;
-    const remoteMod = remote ? Number(remote.dados?._modified) || Date.parse(remote.atualizado_em) || 0 : 0;
     let changed = false;
-    if (remote && remoteMod > localMod) {
-      replaceDb(remote.dados);
-      changed = true;
-    } else {
-      await pushNow();
+    if (remote && remote.dados) {
+      const merged = mergeDb(db, remote.dados);
+      changed = JSON.stringify(merged) !== JSON.stringify(db);
+      if (changed) replaceDb(merged);
     }
+    await pushNow();
     state.status = 'conectado';
     state.lastSync = new Date();
     return { changed };

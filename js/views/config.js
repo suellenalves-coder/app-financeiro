@@ -166,11 +166,18 @@ function cloudCard(rerender) {
   if (!sync.isConfigured()) {
     actions.push(h('button', { class: 'btn btn-primary btn-sm', onclick: () =>
       formModal('Conectar ao Supabase', [
-        { k: 'url', label: 'ID do projeto ou URL', type: 'text', required: true, full: true, placeholder: 'ex.: fsclryvylknuooayreet ou https://xxxx.supabase.co', help: 'Supabase → Settings → General → Project ID (ou a Project URL em Settings → API).' },
-        { k: 'anonKey', label: 'Chave anon (public)', type: 'text', required: true, full: true, help: 'Supabase → Settings → API → anon public (texto longo começando com "eyJ"). Antes, rode o script supabase/schema.sql no SQL Editor.' },
+        { k: 'url', label: 'ID do projeto, URL ou link de conexão', type: 'text', required: true, full: true, placeholder: 'ex.: fsclryvylknuooayreet ou https://xxxx.supabase.co', help: 'Supabase → Settings → General → Project ID. Se recebeu um link de conexão de outro aparelho, cole-o aqui e deixe a chave em branco.' },
+        { k: 'anonKey', label: 'Chave anon (public)', type: 'text', full: true, help: 'Supabase → Settings → API → anon public (texto longo começando com "eyJ"). Antes, rode o script supabase/schema.sql no SQL Editor.' },
       ], {}, vals => {
-        if (!sync.normalizeUrl(vals.url)) return 'Informe o ID do projeto (letras/números) ou a URL completa https://xxxx.supabase.co';
-        sync.setConfig(vals.url, vals.anonKey);
+        // Aceita também um "link de conectar aparelho" colado inteiro no primeiro campo.
+        const fromLink = sync.parseConnectInput(vals.url);
+        if (fromLink) {
+          sync.setConfig(fromLink.url, fromLink.anonKey);
+        } else {
+          if (!sync.normalizeUrl(vals.url)) return 'Informe o ID do projeto (letras/números), a URL https://xxxx.supabase.co ou cole um link de conexão.';
+          if (!vals.anonKey) return 'Informe a chave anon (ou cole um link de conexão no primeiro campo).';
+          sync.setConfig(vals.url, vals.anonKey);
+        }
         toast('Projeto configurado. Teste a configuração ou crie sua conta.');
         rerender();
       }, { saveLabel: 'Conectar' }) }, '🔗 Conectar projeto Supabase'));
@@ -182,17 +189,11 @@ function cloudCard(rerender) {
     const doAuth = (fn, label) => formModal(label, loginFields, {}, vals => {
       fn(vals.email, vals.password).then(res => {
         if (res.confirm) { toast('Conta criada! Confirme pelo link enviado ao seu e-mail e depois clique em Entrar.'); rerender(); return; }
-        // Primeiro acesso neste aparelho: se a nuvem já tem dados, a usuária escolhe qual base manter.
+        // Mescla automática: os lançamentos deste aparelho e os da nuvem são unidos.
         sync.firstSync().then(r => {
-          if (r === 'nuvem-existe') {
-            confirmModal('Já existem dados salvos na nuvem. Deseja usá-los neste aparelho? (Escolher "Manter local" substitui a nuvem pelos dados deste navegador.)', () => {
-              sync.adoptRemote().then(() => { toast('Dados da nuvem carregados.'); rerender(); });
-            }, { yesLabel: 'Usar dados da nuvem', danger: false });
-            // botão Cancelar mantém o local; envia na próxima alteração
-            sync.state.status = 'conectado';
-          } else {
-            toast('Conectada! Dados enviados para a nuvem.');
-          }
+          toast(r === 'mesclado'
+            ? 'Conectada! Os dados deste aparelho e os da nuvem foram unidos.'
+            : 'Conectada! Dados enviados para a nuvem.');
           rerender();
         }).catch(e => { toast('Conectada, mas a sincronização falhou: ' + e.message); rerender(); });
       }).catch(e => toast('Não foi possível: ' + e.message));
@@ -211,7 +212,9 @@ function cloudCard(rerender) {
   }
 
   if (sync.isConfigured()) {
-    actions.push(h('button', { class: 'btn btn-ghost btn-sm', onclick: () => testSetupModal() }, '🔍 Testar configuração'));
+    actions.push(
+      h('button', { class: 'btn btn-secondary btn-sm', onclick: () => connectLinkModal() }, '📲 Conectar outro aparelho'),
+      h('button', { class: 'btn btn-ghost btn-sm', onclick: () => testSetupModal() }, '🔍 Testar configuração'));
   }
 
   return card('☁️ Sincronização entre dispositivos (Supabase)',
@@ -221,6 +224,22 @@ function cloudCard(rerender) {
       'Passo a passo: crie um projeto gratuito em supabase.com, rode o script ',
       h('code', {}, 'supabase/schema.sql'),
       ' no SQL Editor, copie a URL e a chave anon em Settings → API e conecte aqui. Use o mesmo e-mail e senha no celular e no computador.'));
+}
+
+// Modal com o link que configura outro aparelho automaticamente.
+function connectLinkModal() {
+  const link = sync.buildConnectLink();
+  const campo = h('textarea', { rows: 3, readonly: true, style: 'width:100%;font-size:12px;word-break:break-all', onclick: e => e.target.select() }, link);
+  const texto = `Link para configurar o Meu Orçamento Inteligente neste aparelho:\n${link}`;
+  modal('Conectar outro aparelho', h('div', {},
+    h('p', { class: 'stat-sub' },
+      'Abra este link no outro aparelho (celular ou computador) e o app já ficará configurado com o seu projeto — lá é só entrar com o mesmo e-mail e senha. ',
+      h('b', {}, 'O link não contém sua senha'), '; ele carrega apenas o endereço do projeto e a chave pública.'),
+    campo,
+    h('div', { class: 'modal-actions', style: 'flex-wrap:wrap;justify-content:flex-start' },
+      h('button', { class: 'btn btn-primary btn-sm', onclick: () => navigator.clipboard.writeText(link).then(() => toast('Link copiado.')) }, '📋 Copiar link'),
+      h('a', { class: 'btn btn-secondary btn-sm', href: `https://wa.me/?text=${encodeURIComponent(texto)}`, target: '_blank', rel: 'noopener' }, '📱 Enviar no WhatsApp'),
+      h('a', { class: 'btn btn-ghost btn-sm', href: `mailto:?subject=${encodeURIComponent('Configurar Meu Orçamento Inteligente')}&body=${encodeURIComponent(texto)}` }, '✉️ Enviar por e-mail'))));
 }
 
 // Modal com o resultado do diagnóstico da configuração do Supabase.

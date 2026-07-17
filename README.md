@@ -120,6 +120,23 @@ A partir daí a sincronização é automática: cada alteração é enviada ~2 s
 e ao voltar para o app ele busca novidades da nuvem. Também há o botão
 **Sincronizar agora** nas Configurações.
 
+**Como os dados são combinados:** a sincronização é por **mesclagem** — os
+lançamentos do celular e do computador são unidos item a item (nada é apagado
+por sincronizar). Se o mesmo item foi editado nos dois aparelhos, vale a edição
+mais recente; exclusões são propagadas para os demais aparelhos.
+
+**Conectar outro aparelho sem redigitar:** em **Configurações → 📲 Conectar
+outro aparelho**, o app gera um link (para copiar ou enviar por WhatsApp/e-mail)
+que já configura o projeto no novo aparelho — lá basta entrar com o mesmo
+e-mail e senha. O link carrega apenas o endereço do projeto e a chave pública,
+nunca a senha. Na versão de arquivo único, cole o link recebido no campo
+"ID do projeto" do botão Conectar.
+
+**Verificar se está tudo certo:** o botão **🔍 Testar configuração** (em
+Configurações) confere no seu navegador se o projeto está no ar, se a chave é
+válida, se a tabela foi criada e se o login está ativo — com instruções para
+cada pendência.
+
 ## Versão em arquivo único
 
 Para usar sem servidor (basta dar duplo clique no arquivo):

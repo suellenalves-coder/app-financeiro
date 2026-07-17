@@ -1,6 +1,6 @@
 // Cartões, compras parceladas, faturas, mapa de parcelas futuras e importação em massa.
 import { h, fmt, todayISO, ymNow, ymAdd, ymDiff, ymShort, ymLabel, sum, uid, parseTable, parseMoney, parseYm } from '../utils.js';
-import { db, ui, add, update, remove, save } from '../store.js';
+import { db, ui, add, update, remove, removeWhere, save } from '../store.js';
 import { monthInstallments, cardInvoice, futureInstallmentsTotal, monthSummary } from '../calc.js';
 import { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } from '../ui.js';
 
@@ -50,7 +50,7 @@ function purchaseFields() {
 function savePurchase(vals, existingId) {
   if (existingId) {
     // Regerar parcelas mantendo status pago das já quitadas quando possível
-    db.installments = db.installments.filter(p => p.purchaseId !== existingId);
+    removeWhere('installments', p => p.purchaseId === existingId);
     const purchase = update('purchases', existingId, vals);
     db.installments.push(...generateInstallments(purchase));
   } else {
@@ -93,8 +93,8 @@ export function render(el, rerender) {
         rowActions(
           ['✏️', () => editCard(c, rerender), 'Editar cartão'],
           ['🗑', () => confirmModal(`Excluir o cartão "${c.nome}"? As compras e parcelas vinculadas também serão excluídas.`, () => {
-            db.purchases = db.purchases.filter(p => p.cartaoId !== c.id);
-            db.installments = db.installments.filter(p => p.cartaoId !== c.id);
+            removeWhere('purchases', p => p.cartaoId === c.id);
+            removeWhere('installments', p => p.cartaoId === c.id);
             remove('cards', c.id);
             rerender();
           }), 'Excluir cartão'])),
@@ -142,7 +142,7 @@ export function render(el, rerender) {
       { label: '', render: p => rowActions(
           ['✏️', () => formModal('Editar compra parcelada', purchaseFields(), p, vals => { savePurchase(vals, p.id); rerender(); }, { wide: true }), 'Editar'],
           ['🗑', () => confirmModal(`Excluir "${p.descricao}" e todas as suas parcelas?`, () => {
-            db.installments = db.installments.filter(i => i.purchaseId !== p.id);
+            removeWhere('installments', i => i.purchaseId === p.id);
             remove('purchases', p.id);
             rerender();
           }), 'Excluir']), right: true },

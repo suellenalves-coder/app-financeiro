@@ -567,6 +567,7 @@ function defaults() {
       { id: uid(), contem: 'uber', acao: 'categoria', valor: 'Transporte' },
       { id: uid(), contem: 'farmácia', acao: 'categoria', valor: 'Saúde' },
     ],
+    _deleted: {}, // id → timestamp da exclusão (para a mesclagem entre aparelhos não ressuscitar itens)
   };
 }
 
@@ -607,9 +608,10 @@ function resetAll() {
   save();
 }
 
-// CRUD genérico por coleção
+// CRUD genérico por coleção. _ts marca a última alteração de cada item,
+// usado na mesclagem entre aparelhos (o mais recente vence, item a item).
 function add(coll, obj) {
-  const item = { id: uid(), ...obj };
+  const item = { id: uid(), ...obj, _ts: Date.now() };
   db[coll].push(item);
   save();
   return item;
@@ -617,12 +619,20 @@ function add(coll, obj) {
 
 function update(coll, id, patch) {
   const item = db[coll].find(x => x.id === id);
-  if (item) { Object.assign(item, patch); save(); }
+  if (item) { Object.assign(item, patch, { _ts: Date.now() }); save(); }
   return item;
 }
 
 function remove(coll, id) {
+  db._deleted[id] = Date.now();
   db[coll] = db[coll].filter(x => x.id !== id);
+  save();
+}
+
+// Exclusão em lote com registro de tombstones (usar no lugar de db[coll] = db[coll].filter(...)).
+function removeWhere(coll, pred) {
+  for (const item of db[coll]) if (pred(item)) db._deleted[item.id] = Date.now();
+  db[coll] = db[coll].filter(x => !pred(x));
   save();
 }
 
@@ -649,7 +659,7 @@ function applyRules(descricao) {
   return out;
 }
 
-return { CATEGORIAS_DESPESA, CATEGORIAS_RECEITA, TIPOS_RECEITA, STATUS_RECEITA, CLASSIFICACAO_DESPESA, STATUS_DESPESA, STATUS_REEMBOLSO, FORMAS_PAGAMENTO, PERIODICIDADES, TIPOS_INVESTIMENTO, OBJETIVOS_INVESTIMENTO, CRITERIOS_DIVISAO, CATEGORIAS_CARRO, db, setOnSave, save, replaceDb, resetAll, add, update, remove, get, ui, applyRules };
+return { CATEGORIAS_DESPESA, CATEGORIAS_RECEITA, TIPOS_RECEITA, STATUS_RECEITA, CLASSIFICACAO_DESPESA, STATUS_DESPESA, STATUS_REEMBOLSO, FORMAS_PAGAMENTO, PERIODICIDADES, TIPOS_INVESTIMENTO, OBJETIVOS_INVESTIMENTO, CRITERIOS_DIVISAO, CATEGORIAS_CARRO, db, setOnSave, save, replaceDb, resetAll, add, update, remove, removeWhere, get, ui, applyRules };
 })();
 
 __m['sync'] = (() => {
@@ -694,6 +704,52 @@ function setConfig(url, anonKey) {
   cfg.anonKey = anonKey.trim();
   saveCfg();
   state.status = 'configurado';
+}
+
+// ---- Link para conectar outro aparelho ----
+// Gera um endereço que já leva a URL e a chave anon embutidas (nunca a sessão/senha).
+// Codificação em base64 url-safe para caber no hash sem escapar caracteres.
+function buildConnectLink() {
+  if (!isConfigured()) return '';
+  const payload = b64encode(JSON.stringify({ u: cfg.url, k: cfg.anonKey }));
+  const base = location.href.split('#')[0];
+  return `${base}#/config?conectar=${payload}`;
+}
+
+// Extrai a configuração de um link de conexão colado (ou retorna null).
+function parseConnectInput(text) {
+  const m = String(text || '').match(/conectar=([A-Za-z0-9_\-%]+)/);
+  if (!m) return null;
+  try {
+    const { u, k } = JSON.parse(b64decode(decodeURIComponent(m[1])));
+    if (u && k) return { url: u, anonKey: k };
+  } catch { /* link inválido */ }
+  return null;
+}
+
+// Lê o parâmetro "conectar" do hash e aplica a configuração. Retorna true se aplicou.
+function applyConnectFromHash() {
+  const m = (location.hash || '').match(/[?&]conectar=([^&]+)/);
+  if (!m) return false;
+  try {
+    const { u, k } = JSON.parse(b64decode(decodeURIComponent(m[1])));
+    if (u && k) {
+      setConfig(u, k);
+      // Limpa o parâmetro da URL, preservando a rota.
+      const rota = (location.hash.split('?')[0]) || '#/config';
+      history.replaceState(null, '', location.pathname + location.search + rota);
+      return true;
+    }
+  } catch { /* link inválido */ }
+  return false;
+}
+
+function b64encode(str) {
+  return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function b64decode(str) {
+  const s = str.replace(/-/g, '+').replace(/_/g, '/');
+  return decodeURIComponent(escape(atob(s)));
 }
 
 // Diagnóstico da configuração: roda no navegador da usuária e informa o que falta.
@@ -851,35 +907,92 @@ async function pushNow() {
   state.lastSync = new Date();
 }
 
-// Primeiro login em um aparelho: se já existem dados na nuvem, quem decide é a usuária
-// (evita que o onboarding recém-feito sobrescreva a base real).
+// ---- Mesclagem (merge) ----
+// Nada é apagado por sincronizar: os lançamentos dos dois lados são unidos item a item
+// (cada item tem id único). Para o MESMO item alterado nos dois lados, vence o que tem
+// _ts mais recente. Exclusões viajam como tombstones em _deleted, para não ressuscitar.
+const COLLECTIONS = [
+  'banks', 'categoriesExpense', 'categoriesIncome', 'people', 'cards',
+  'incomes', 'expenses', 'purchases', 'installments', 'recurring',
+  'provisions', 'provisionDeposits', 'investments', 'investContrib',
+  'reimbursements', 'rules',
+];
+
+function mergeById(a, b, deleted, bWinsTies) {
+  const map = new Map();
+  const putAll = (list, winsTies) => {
+    for (const item of list || []) {
+      if (!item || !item.id || deleted[item.id]) continue;
+      const cur = map.get(item.id);
+      if (!cur) { map.set(item.id, item); continue; }
+      const tsCur = Number(cur._ts) || 0;
+      const tsNew = Number(item._ts) || 0;
+      if (tsNew > tsCur || (tsNew === tsCur && winsTies)) map.set(item.id, item);
+    }
+  };
+  putAll(a, !bWinsTies);
+  putAll(b, bWinsTies);
+  return [...map.values()];
+}
+
+// Catálogos referenciados por NOME (não por id) podem ser deduplicados com segurança —
+// evita "XP" em dobro quando os dois aparelhos fizeram o onboarding separadamente.
+function dedupeByName(list, keyFn) {
+  const seen = new Map();
+  for (const item of list) {
+    const key = keyFn(item).trim().toLowerCase();
+    const cur = seen.get(key);
+    if (!cur) seen.set(key, item);
+    else if (Array.isArray(cur.sub) && Array.isArray(item.sub)) {
+      cur.sub = [...new Set([...cur.sub, ...item.sub])];
+    }
+  }
+  return [...seen.values()];
+}
+
+function mergeDb(local, remote) {
+  const remoteNewer = (Number(remote._modified) || 0) > (Number(local._modified) || 0);
+  const newer = remoteNewer ? remote : local;
+  const older = remoteNewer ? local : remote;
+  const deleted = { ...(local._deleted || {}), ...(remote._deleted || {}) };
+
+  const merged = { ...older, ...newer };
+  merged.settings = { ...(older.settings || {}), ...(newer.settings || {}) };
+  merged.recurringOcc = { ...(older.recurringOcc || {}), ...(newer.recurringOcc || {}) };
+  merged._deleted = deleted;
+  merged._modified = Math.max(Number(local._modified) || 0, Number(remote._modified) || 0);
+
+  for (const coll of COLLECTIONS) {
+    merged[coll] = mergeById(local[coll], remote[coll], deleted, remoteNewer);
+  }
+  merged.banks = dedupeByName(merged.banks, b => b.nome || '');
+  merged.categoriesExpense = dedupeByName(merged.categoriesExpense, c => c.nome || '');
+  merged.categoriesIncome = dedupeByName(merged.categoriesIncome, c => c.nome || '');
+  merged.rules = dedupeByName(merged.rules, r => `${r.contem}|${r.acao}|${r.valor}`);
+  return merged;
+}
+
+// Primeiro login em um aparelho: mescla automaticamente com o que existe na nuvem —
+// nenhum dos lados apaga o outro.
 async function firstSync() {
-  const remote = await fetchRemote();
-  if (!remote) { await pushNow(); return 'enviado'; }
-  return 'nuvem-existe';
+  const r = await syncNow();
+  return r.changed ? 'mesclado' : 'enviado';
 }
 
-async function adoptRemote() {
-  const remote = await fetchRemote();
-  if (remote) { replaceDb(remote.dados); state.lastSync = new Date(); }
-}
-
-// Sincroniza: baixa o remoto; se for mais novo que o local, substitui; senão, envia o local.
+// Sincroniza: baixa o remoto, mescla com o local e envia o resultado.
 async function syncNow() {
   if (!isLoggedIn()) return { changed: false };
   state.status = 'sincronizando';
   state.error = '';
   try {
     const remote = await fetchRemote();
-    const localMod = Number(db._modified) || 0;
-    const remoteMod = remote ? Number(remote.dados?._modified) || Date.parse(remote.atualizado_em) || 0 : 0;
     let changed = false;
-    if (remote && remoteMod > localMod) {
-      replaceDb(remote.dados);
-      changed = true;
-    } else {
-      await pushNow();
+    if (remote && remote.dados) {
+      const merged = mergeDb(db, remote.dados);
+      changed = JSON.stringify(merged) !== JSON.stringify(db);
+      if (changed) replaceDb(merged);
     }
+    await pushNow();
     state.status = 'conectado';
     state.lastSync = new Date();
     return { changed };
@@ -922,7 +1035,7 @@ function init(onRemoteChange) {
   trySync();
 }
 
-return { state, getConfig, isConfigured, isLoggedIn, userEmail, normalizeUrl, setConfig, testSetup, disconnect, signOut, signUp, signIn, pushNow, firstSync, adoptRemote, syncNow, init };
+return { state, getConfig, isConfigured, isLoggedIn, userEmail, normalizeUrl, setConfig, buildConnectLink, parseConnectInput, applyConnectFromHash, testSetup, disconnect, signOut, signUp, signIn, pushNow, mergeDb, firstSync, syncNow, init };
 })();
 
 __m['calc'] = (() => {
@@ -1882,7 +1995,7 @@ return { render };
 __m['despesas'] = (() => {
 // Despesas avulsas: cadastro completo, pagamento rápido, duplicação e filtros.
 const { h, fmt, todayISO, sum, uid } = __m['utils'];
-const { db, ui, add, update, remove, save, applyRules, CLASSIFICACAO_DESPESA, STATUS_DESPESA, FORMAS_PAGAMENTO, } = __m['store'];
+const { db, ui, add, update, remove, removeWhere, save, applyRules, CLASSIFICACAO_DESPESA, STATUS_DESPESA, FORMAS_PAGAMENTO, } = __m['store'];
 const { monthExpenses, expenseNet } = __m['calc'];
 const { card, table, badge, formModal, confirmModal, rowActions, statCard, toast } = __m['ui'];
 
@@ -1939,7 +2052,7 @@ function syncReimbursement(exp) {
       });
     }
   } else if (existing && ['pendente', 'solicitado'].includes(existing.status)) {
-    db.reimbursements = db.reimbursements.filter(r => r !== existing);
+    removeWhere('reimbursements', r => r === existing);
   }
   save();
 }
@@ -2028,7 +2141,7 @@ function actions(e, rerender) {
       formModal('Duplicar despesa', fields(), copy, vals => { saveExpense(vals); toast('Despesa duplicada.'); rerender(); }, { wide: true });
     }, 'Duplicar'],
     ['🗑', () => confirmModal(`Excluir a despesa "${e.descricao}"?`, () => {
-      db.reimbursements = db.reimbursements.filter(r => r.expenseId !== e.id);
+      removeWhere('reimbursements', r => r.expenseId === e.id);
       remove('expenses', e.id);
       rerender();
     }), 'Excluir']);
@@ -2041,7 +2154,7 @@ return { fields, syncReimbursement, quickAdd, markPaid, render };
 __m['cartoes'] = (() => {
 // Cartões, compras parceladas, faturas, mapa de parcelas futuras e importação em massa.
 const { h, fmt, todayISO, ymNow, ymAdd, ymDiff, ymShort, ymLabel, sum, uid, parseTable, parseMoney, parseYm } = __m['utils'];
-const { db, ui, add, update, remove, save } = __m['store'];
+const { db, ui, add, update, remove, removeWhere, save } = __m['store'];
 const { monthInstallments, cardInvoice, futureInstallmentsTotal, monthSummary } = __m['calc'];
 const { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } = __m['ui'];
 
@@ -2091,7 +2204,7 @@ function purchaseFields() {
 function savePurchase(vals, existingId) {
   if (existingId) {
     // Regerar parcelas mantendo status pago das já quitadas quando possível
-    db.installments = db.installments.filter(p => p.purchaseId !== existingId);
+    removeWhere('installments', p => p.purchaseId === existingId);
     const purchase = update('purchases', existingId, vals);
     db.installments.push(...generateInstallments(purchase));
   } else {
@@ -2134,8 +2247,8 @@ function render(el, rerender) {
         rowActions(
           ['✏️', () => editCard(c, rerender), 'Editar cartão'],
           ['🗑', () => confirmModal(`Excluir o cartão "${c.nome}"? As compras e parcelas vinculadas também serão excluídas.`, () => {
-            db.purchases = db.purchases.filter(p => p.cartaoId !== c.id);
-            db.installments = db.installments.filter(p => p.cartaoId !== c.id);
+            removeWhere('purchases', p => p.cartaoId === c.id);
+            removeWhere('installments', p => p.cartaoId === c.id);
             remove('cards', c.id);
             rerender();
           }), 'Excluir cartão'])),
@@ -2183,7 +2296,7 @@ function render(el, rerender) {
       { label: '', render: p => rowActions(
           ['✏️', () => formModal('Editar compra parcelada', purchaseFields(), p, vals => { savePurchase(vals, p.id); rerender(); }, { wide: true }), 'Editar'],
           ['🗑', () => confirmModal(`Excluir "${p.descricao}" e todas as suas parcelas?`, () => {
-            db.installments = db.installments.filter(i => i.purchaseId !== p.id);
+            removeWhere('installments', i => i.purchaseId === p.id);
             remove('purchases', p.id);
             rerender();
           }), 'Excluir']), right: true },
@@ -3583,11 +3696,18 @@ function cloudCard(rerender) {
   if (!sync.isConfigured()) {
     actions.push(h('button', { class: 'btn btn-primary btn-sm', onclick: () =>
       formModal('Conectar ao Supabase', [
-        { k: 'url', label: 'ID do projeto ou URL', type: 'text', required: true, full: true, placeholder: 'ex.: fsclryvylknuooayreet ou https://xxxx.supabase.co', help: 'Supabase → Settings → General → Project ID (ou a Project URL em Settings → API).' },
-        { k: 'anonKey', label: 'Chave anon (public)', type: 'text', required: true, full: true, help: 'Supabase → Settings → API → anon public (texto longo começando com "eyJ"). Antes, rode o script supabase/schema.sql no SQL Editor.' },
+        { k: 'url', label: 'ID do projeto, URL ou link de conexão', type: 'text', required: true, full: true, placeholder: 'ex.: fsclryvylknuooayreet ou https://xxxx.supabase.co', help: 'Supabase → Settings → General → Project ID. Se recebeu um link de conexão de outro aparelho, cole-o aqui e deixe a chave em branco.' },
+        { k: 'anonKey', label: 'Chave anon (public)', type: 'text', full: true, help: 'Supabase → Settings → API → anon public (texto longo começando com "eyJ"). Antes, rode o script supabase/schema.sql no SQL Editor.' },
       ], {}, vals => {
-        if (!sync.normalizeUrl(vals.url)) return 'Informe o ID do projeto (letras/números) ou a URL completa https://xxxx.supabase.co';
-        sync.setConfig(vals.url, vals.anonKey);
+        // Aceita também um "link de conectar aparelho" colado inteiro no primeiro campo.
+        const fromLink = sync.parseConnectInput(vals.url);
+        if (fromLink) {
+          sync.setConfig(fromLink.url, fromLink.anonKey);
+        } else {
+          if (!sync.normalizeUrl(vals.url)) return 'Informe o ID do projeto (letras/números), a URL https://xxxx.supabase.co ou cole um link de conexão.';
+          if (!vals.anonKey) return 'Informe a chave anon (ou cole um link de conexão no primeiro campo).';
+          sync.setConfig(vals.url, vals.anonKey);
+        }
         toast('Projeto configurado. Teste a configuração ou crie sua conta.');
         rerender();
       }, { saveLabel: 'Conectar' }) }, '🔗 Conectar projeto Supabase'));
@@ -3599,17 +3719,11 @@ function cloudCard(rerender) {
     const doAuth = (fn, label) => formModal(label, loginFields, {}, vals => {
       fn(vals.email, vals.password).then(res => {
         if (res.confirm) { toast('Conta criada! Confirme pelo link enviado ao seu e-mail e depois clique em Entrar.'); rerender(); return; }
-        // Primeiro acesso neste aparelho: se a nuvem já tem dados, a usuária escolhe qual base manter.
+        // Mescla automática: os lançamentos deste aparelho e os da nuvem são unidos.
         sync.firstSync().then(r => {
-          if (r === 'nuvem-existe') {
-            confirmModal('Já existem dados salvos na nuvem. Deseja usá-los neste aparelho? (Escolher "Manter local" substitui a nuvem pelos dados deste navegador.)', () => {
-              sync.adoptRemote().then(() => { toast('Dados da nuvem carregados.'); rerender(); });
-            }, { yesLabel: 'Usar dados da nuvem', danger: false });
-            // botão Cancelar mantém o local; envia na próxima alteração
-            sync.state.status = 'conectado';
-          } else {
-            toast('Conectada! Dados enviados para a nuvem.');
-          }
+          toast(r === 'mesclado'
+            ? 'Conectada! Os dados deste aparelho e os da nuvem foram unidos.'
+            : 'Conectada! Dados enviados para a nuvem.');
           rerender();
         }).catch(e => { toast('Conectada, mas a sincronização falhou: ' + e.message); rerender(); });
       }).catch(e => toast('Não foi possível: ' + e.message));
@@ -3628,7 +3742,9 @@ function cloudCard(rerender) {
   }
 
   if (sync.isConfigured()) {
-    actions.push(h('button', { class: 'btn btn-ghost btn-sm', onclick: () => testSetupModal() }, '🔍 Testar configuração'));
+    actions.push(
+      h('button', { class: 'btn btn-secondary btn-sm', onclick: () => connectLinkModal() }, '📲 Conectar outro aparelho'),
+      h('button', { class: 'btn btn-ghost btn-sm', onclick: () => testSetupModal() }, '🔍 Testar configuração'));
   }
 
   return card('☁️ Sincronização entre dispositivos (Supabase)',
@@ -3638,6 +3754,22 @@ function cloudCard(rerender) {
       'Passo a passo: crie um projeto gratuito em supabase.com, rode o script ',
       h('code', {}, 'supabase/schema.sql'),
       ' no SQL Editor, copie a URL e a chave anon em Settings → API e conecte aqui. Use o mesmo e-mail e senha no celular e no computador.'));
+}
+
+// Modal com o link que configura outro aparelho automaticamente.
+function connectLinkModal() {
+  const link = sync.buildConnectLink();
+  const campo = h('textarea', { rows: 3, readonly: true, style: 'width:100%;font-size:12px;word-break:break-all', onclick: e => e.target.select() }, link);
+  const texto = `Link para configurar o Meu Orçamento Inteligente neste aparelho:\n${link}`;
+  modal('Conectar outro aparelho', h('div', {},
+    h('p', { class: 'stat-sub' },
+      'Abra este link no outro aparelho (celular ou computador) e o app já ficará configurado com o seu projeto — lá é só entrar com o mesmo e-mail e senha. ',
+      h('b', {}, 'O link não contém sua senha'), '; ele carrega apenas o endereço do projeto e a chave pública.'),
+    campo,
+    h('div', { class: 'modal-actions', style: 'flex-wrap:wrap;justify-content:flex-start' },
+      h('button', { class: 'btn btn-primary btn-sm', onclick: () => navigator.clipboard.writeText(link).then(() => toast('Link copiado.')) }, '📋 Copiar link'),
+      h('a', { class: 'btn btn-secondary btn-sm', href: `https://wa.me/?text=${encodeURIComponent(texto)}`, target: '_blank', rel: 'noopener' }, '📱 Enviar no WhatsApp'),
+      h('a', { class: 'btn btn-ghost btn-sm', href: `mailto:?subject=${encodeURIComponent('Configurar Meu Orçamento Inteligente')}&body=${encodeURIComponent(texto)}` }, '✉️ Enviar por e-mail'))));
 }
 
 // Modal com o resultado do diagnóstico da configuração do Supabase.
@@ -3831,6 +3963,11 @@ function showOnboarding() {
 }
 
 window.addEventListener('hashchange', render);
+// Se o app foi aberto por um "link de conectar aparelho", aplica a configuração antes de tudo.
+if (sync.applyConnectFromHash()) {
+  toast('Projeto configurado por link. Agora entre com seu e-mail e senha.');
+  if (!location.hash.startsWith('#/config')) location.hash = '#/config';
+}
 sync.init(() => { toast('Dados atualizados a partir da nuvem.'); render(); });
 render();
 

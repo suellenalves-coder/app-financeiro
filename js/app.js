@@ -126,5 +126,10 @@ function showOnboarding() {
 }
 
 window.addEventListener('hashchange', render);
+// Se o app foi aberto por um "link de conectar aparelho", aplica a configuração antes de tudo.
+if (sync.applyConnectFromHash()) {
+  toast('Projeto configurado por link. Agora entre com seu e-mail e senha.');
+  if (!location.hash.startsWith('#/config')) location.hash = '#/config';
+}
 sync.init(() => { toast('Dados atualizados a partir da nuvem.'); render(); });
 render();

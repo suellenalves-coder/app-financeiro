@@ -101,6 +101,7 @@ function defaults() {
       { id: uid(), contem: 'uber', acao: 'categoria', valor: 'Transporte' },
       { id: uid(), contem: 'farmácia', acao: 'categoria', valor: 'Saúde' },
     ],
+    _deleted: {}, // id → timestamp da exclusão (para a mesclagem entre aparelhos não ressuscitar itens)
   };
 }
 
@@ -141,9 +142,10 @@ export function resetAll() {
   save();
 }
 
-// CRUD genérico por coleção
+// CRUD genérico por coleção. _ts marca a última alteração de cada item,
+// usado na mesclagem entre aparelhos (o mais recente vence, item a item).
 export function add(coll, obj) {
-  const item = { id: uid(), ...obj };
+  const item = { id: uid(), ...obj, _ts: Date.now() };
   db[coll].push(item);
   save();
   return item;
@@ -151,12 +153,20 @@ export function add(coll, obj) {
 
 export function update(coll, id, patch) {
   const item = db[coll].find(x => x.id === id);
-  if (item) { Object.assign(item, patch); save(); }
+  if (item) { Object.assign(item, patch, { _ts: Date.now() }); save(); }
   return item;
 }
 
 export function remove(coll, id) {
+  db._deleted[id] = Date.now();
   db[coll] = db[coll].filter(x => x.id !== id);
+  save();
+}
+
+// Exclusão em lote com registro de tombstones (usar no lugar de db[coll] = db[coll].filter(...)).
+export function removeWhere(coll, pred) {
+  for (const item of db[coll]) if (pred(item)) db._deleted[item.id] = Date.now();
+  db[coll] = db[coll].filter(x => !pred(x));
   save();
 }
 
