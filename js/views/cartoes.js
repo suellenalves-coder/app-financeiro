@@ -72,13 +72,21 @@ function syncReimbursementsForPurchase(purchase, installments) {
     return;
   }
 
+  // Migração de dados antigos: um reembolso único sem mês definido (de uma versão anterior
+  // do app, que não dividia por parcela) é substituído pelos lançamentos mensais corretos,
+  // desde que ainda não tenha recebimento registrado.
+  for (const r of existing) {
+    if (!r.mes && ['pendente', 'solicitado'].includes(r.status)) removeWhere('reimbursements', x => x.id === r.id);
+  }
+  const restantes = existing.filter(r => r.mes || ['pago', 'parcial'].includes(r.status));
+
   const card = db.cards.find(c => c.id === purchase.cartaoId);
   const totalParcelas = installments.length || 1;
   const valorPorMes = Number(purchase.valorReembolsavel) / totalParcelas;
   const mesesAtuais = new Set(installments.map(p => p.mes));
 
   for (const p of installments) {
-    const found = existing.find(r => r.mes === p.mes);
+    const found = restantes.find(r => r.mes === p.mes);
     if (found) {
       if (!['pago', 'parcial'].includes(found.status)) {
         update('reimbursements', found.id, {
@@ -97,7 +105,7 @@ function syncReimbursementsForPurchase(purchase, installments) {
     }
   }
   // Parcela removida (reduziu o número de parcelas): some o reembolso daquele mês, se ainda não foi pago.
-  for (const r of existing) {
+  for (const r of restantes) {
     if (r.mes && !mesesAtuais.has(r.mes) && ['pendente', 'solicitado'].includes(r.status)) {
       removeWhere('reimbursements', x => x.id === r.id);
     }
@@ -121,6 +129,18 @@ function savePurchase(vals, existingId) {
   save();
 }
 
+// Autocorreção: compras reembolsáveis cadastradas antes desta versão (ou nunca reeditadas)
+// ainda têm um reembolso único e não dividido por parcela. Chamada sempre que as telas de
+// Cartões ou Reembolsos abrem — sincroniza tudo em silêncio, sem exigir reedição manual.
+export function ensureReimbursementSync() {
+  for (const purchase of db.purchases) {
+    if (!purchase.reembolsavel) continue;
+    const installments = db.installments.filter(i => i.purchaseId === purchase.id);
+    if (!installments.length) continue;
+    syncReimbursementsForPurchase(purchase, installments);
+  }
+}
+
 // Avisos pós-cadastro: a compra deixa algum mês futuro negativo?
 function warnAfterPurchase(vals) {
   const meses = Number(vals.numParcelas) - Number(vals.parcelaInicial || 1) + 1;
@@ -136,6 +156,7 @@ function warnAfterPurchase(vals) {
 
 export function render(el, rerender) {
   const ym = ui.month;
+  ensureReimbursementSync();
 
   if (!db.cards.length) {
     el.append(card('Comece cadastrando um cartão',

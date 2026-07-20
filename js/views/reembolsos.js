@@ -1,8 +1,87 @@
-// Reembolsos: resumo por pessoa (mês a mês), detalhe, recebimento parcial e mensagem para WhatsApp.
+// Reembolsos: resumo por pessoa (mês a mês), parcelamentos agrupados, detalhe, recebimento
+// parcial e mensagem para WhatsApp.
 import { h, fmt, fmtDate, todayISO, sum, ymShort, ymLabel } from '../utils.js';
 import { db, ui, add, update, remove, save, STATUS_REEMBOLSO, CRITERIOS_DIVISAO, FORMAS_PAGAMENTO } from '../store.js';
 import { reimbPending, reimbOutstanding, reimbMonth } from '../calc.js';
+import { ensureReimbursementSync } from './cartoes.js';
 import { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } from '../ui.js';
+
+// Parcela X/Y correspondente a um reembolso ligado a uma compra do cartão (ou '—' se avulso).
+function parcelaLabel(r) {
+  if (!r.purchaseId || !r.mes) return '—';
+  const i = db.installments.find(x => x.purchaseId === r.purchaseId && x.mes === r.mes);
+  return i ? `${i.numero}/${i.total}` : '—';
+}
+
+// Agrupa os reembolsos de compras parceladas por compra: total do parcelamento, quanto
+// falta, quanto é neste mês e em que mês termina — a visão que responde "quando acaba".
+function purchaseGroups(ym, pessoaId) {
+  const relevantes = db.reimbursements.filter(r =>
+    r.purchaseId && r.status !== 'cancelado' && (!pessoaId || r.pessoaId === pessoaId));
+  const map = new Map();
+  for (const r of relevantes) {
+    if (!map.has(r.purchaseId)) map.set(r.purchaseId, []);
+    map.get(r.purchaseId).push(r);
+  }
+  const groups = [];
+  for (const [purchaseId, list] of map) {
+    const purchase = db.purchases.find(p => p.id === purchaseId);
+    const sorted = [...list].sort((a, b) => (a.mes || '').localeCompare(b.mes || ''));
+    const installmentsOf = db.installments.filter(i => i.purchaseId === purchaseId).sort((a, b) => a.numero - b.numero);
+    const thisMonth = sorted.find(r => r.mes === ym);
+    const totalPendente = sum(sorted, reimbPending);
+    if (totalPendente <= 0.004) continue; // parcelamento já quitado por completo
+    groups.push({
+      purchaseId, items: sorted,
+      pessoa: db.people.find(p => p.id === sorted[0]?.pessoaId),
+      descricao: purchase?.descricao || sorted[0]?.descricao || '—',
+      totalAReembolsar: sum(sorted, r => r.valorAReembolsar),
+      totalRecebido: sum(sorted, r => r.valorRecebido),
+      totalPendente,
+      valorMes: thisMonth ? reimbPending(thisMonth) : 0,
+      statusMes: thisMonth ? thisMonth.status : null,
+      parcelaMes: thisMonth ? parcelaLabel(thisMonth) : '—',
+      terminaEm: installmentsOf.length ? installmentsOf[installmentsOf.length - 1].mes : sorted[sorted.length - 1]?.mes,
+    });
+  }
+  return groups.sort((a, b) => (a.terminaEm || '').localeCompare(b.terminaEm || ''));
+}
+
+function renderParcelamentos(ym, pessoaId) {
+  const groups = purchaseGroups(ym, pessoaId);
+  return card('Parcelamentos reembolsáveis',
+    h('p', { class: 'stat-sub', style: 'margin-top:-4px' },
+      'Total do parcelamento, quanto cai neste mês e em que mês termina — para saber exatamente até quando cobrar.'),
+    table([
+      { label: 'Descrição', k: 'descricao' },
+      ...(pessoaId ? [] : [{ label: 'Pessoa', render: g => g.pessoa?.nome || '—' }]),
+      { label: 'Parcela do mês', render: g => g.parcelaMes },
+      { label: `Valor em ${ymShort(ym)}`, render: g => g.statusMes
+          ? h(g.valorMes > 0 ? 'b' : 'span', {}, fmt(g.valorMes))
+          : h('span', { class: 'stat-sub' }, 'sem parcela'), right: true },
+      { label: 'Status do mês', render: g => g.statusMes ? badge(g.statusMes) : '—' },
+      { label: 'Total do parcelamento', render: g => fmt(g.totalAReembolsar), right: true },
+      { label: 'Total pendente', render: g => h(g.totalPendente > 0 ? 'b' : 'span', {}, fmt(g.totalPendente)), right: true },
+      { label: 'Termina em', render: g => g.terminaEm ? h('b', {}, ymShort(g.terminaEm)) : '—' },
+      { label: '', render: g => h('button', { class: 'btn btn-ghost btn-sm', onclick: () => detalhamentoModal(g) }, '📋 Detalhamento'), right: true },
+    ], groups, { empty: 'Nenhum parcelamento reembolsável em aberto. Marque uma compra do cartão como reembolsável para ela aparecer aqui.' }));
+}
+
+// Detalhamento mês a mês de um parcelamento específico: cada parcela, seu status e se já foi
+// recebida — responde "quando acaba" e "o que já entrou".
+function detalhamentoModal(group) {
+  modal(`Detalhamento — ${group.descricao}`, h('div', {},
+    h('p', { class: 'stat-sub' },
+      `${group.pessoa?.nome || 'Pessoa não definida'} · total do parcelamento: ${fmt(group.totalAReembolsar)} · já recebido: ${fmt(group.totalRecebido)} · termina em ${group.terminaEm ? ymLabel(group.terminaEm) : '—'}`),
+    table([
+      { label: 'Mês', render: r => h(r.mes === ui.month ? 'b' : 'span', {}, ymShort(r.mes)) },
+      { label: 'Parcela', render: r => parcelaLabel(r) },
+      { label: 'Valor', k: 'valorAReembolsar', money: true },
+      { label: 'Recebido', k: 'valorRecebido', money: true },
+      { label: 'Pendente', render: r => fmt(reimbPending(r)), right: true },
+      { label: 'Status', render: r => badge(r.status) },
+    ], group.items)));
+}
 
 let pessoaSelecionada = null;
 
@@ -36,11 +115,13 @@ function recalc(v) {
 }
 
 export function render(el, rerender) {
+  ensureReimbursementSync();
   if (pessoaSelecionada) return renderPessoa(el, rerender);
 
   const ym = ui.month;
   const ativos = db.reimbursements.filter(r => !['cancelado'].includes(r.status));
   const doMes = ativos.filter(r => reimbMonth(r) === ym);
+  const avulsos = ativos.filter(r => !r.purchaseId);
 
   el.append(h('div', { class: 'grid grid-cards' },
     statCard(`Pendente em ${ymLabel(ym)}`, sum(doMes, reimbPending), { tone: sum(doMes, reimbPending) > 0 ? 'tone-warn' : 'tone-ok' }),
@@ -78,16 +159,19 @@ export function render(el, rerender) {
       { label: '', render: x => h('button', { class: 'btn btn-secondary btn-sm', onclick: () => messageModal(x.pessoa, ym) }, '💬 Gerar mensagem'), right: true },
     ], porPessoa, { empty: 'Nenhum reembolso registrado. Marque despesas ou compras do cartão como reembolsáveis, ou cadastre aqui direto.' })));
 
-  el.append(renderLista(doMes, rerender, `Reembolsos com competência em ${ymLabel(ym)}`,
+  el.append(renderParcelamentos(ym));
+  if (avulsos.length) el.append(renderLista(avulsos, rerender, 'Reembolsos avulsos (despesas não parceladas)'));
+  el.append(renderLista(doMes, rerender, `Ações do mês: reembolsos com competência em ${ymLabel(ym)}`,
     { empty: `Nenhum reembolso com competência em ${ymLabel(ym)}.` }));
-  el.append(renderLista(ativos, rerender, 'Todos os reembolsos em aberto (todos os meses)'));
+  el.append(renderLista(ativos, rerender, 'Todos os reembolsos em aberto (qualquer mês)'));
 }
 
 function renderPessoa(el, rerender) {
   const p = db.people.find(x => x.id === pessoaSelecionada);
   if (!p) { pessoaSelecionada = null; return rerender(); }
   const ym = ui.month;
-  const items = db.reimbursements.filter(r => r.pessoaId === p.id);
+  const items = db.reimbursements.filter(r => r.pessoaId === p.id && r.status !== 'cancelado');
+  const avulsos = items.filter(r => !r.purchaseId);
   const aberto = sum(items.filter(r => ['pendente', 'solicitado', 'parcial', 'atrasado'].includes(r.status)), reimbPending);
   const doMes = sum(items.filter(r => reimbMonth(r) === ym), reimbPending);
 
@@ -101,17 +185,18 @@ function renderPessoa(el, rerender) {
     statCard('Já recebido', sum(items, r => r.valorRecebido), { tone: 'tone-ok' }),
     statCard('Lançamentos', String(items.length))));
 
-  el.append(renderLista(items, rerender, `Histórico de ${p.nome} — mês a mês`));
+  el.append(renderParcelamentos(ym, p.id));
+  if (avulsos.length) el.append(renderLista(avulsos, rerender, `Reembolsos avulsos de ${p.nome}`));
+  el.append(renderLista(items, rerender, `Histórico completo de ${p.nome} — mês a mês`));
 }
 
 function renderLista(items, rerender, title, opts = {}) {
-  const sorted = [...items].sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+  const sorted = [...items].sort((a, b) => (b.mes || b.data || '').localeCompare(a.mes || a.data || ''));
   return card(title, table([
     { label: 'Mês', render: r => h(reimbMonth(r) === ui.month ? 'b' : 'span', {}, ymShort(reimbMonth(r))) },
-    { label: 'Data', k: 'data', date: true },
+    { label: 'Parcela', render: r => parcelaLabel(r) },
     { label: 'Descrição', k: 'descricao' },
     { label: 'Pessoa', render: r => db.people.find(p => p.id === r.pessoaId)?.nome || '—' },
-    { label: 'Despesa do mês', k: 'valorTotalDespesa', money: true },
     { label: 'A reembolsar', k: 'valorAReembolsar', money: true },
     { label: 'Recebido', k: 'valorRecebido', money: true },
     { label: 'Pendente', render: r => h(reimbPending(r) > 0 ? 'b' : 'span', {}, fmt(reimbPending(r))), right: true },
