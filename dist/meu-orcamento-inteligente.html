@@ -2375,6 +2375,16 @@ function render(el, rerender) {
       c.limitePlanejado > 0 ? h('div', {},
         h('div', { class: 'commit-meter' }, h('div', { style: `width:${Math.min(100, pct)}%;background:${meterColor}` })),
         h('div', { class: 'stat-sub' }, `Sua fatura já atingiu ${pct.toFixed(0)}% do limite planejado para este mês.`)) : null,
+      inv.parcelas.length ? h('div', { style: 'margin:10px 0' },
+        h('button', {
+          class: 'btn btn-sm ' + (inv.parcelas.every(p => p.status === 'pago') ? 'btn-ghost' : 'btn-primary'),
+          onclick: () => {
+            const todasPagas = inv.parcelas.every(p => p.status === 'pago');
+            for (const p of inv.parcelas) update('installments', p.id, { status: todasPagas ? 'previsto' : 'pago' });
+            toast(todasPagas ? 'Pagamento da fatura desfeito.' : 'Fatura inteira marcada como paga.');
+            rerender();
+          },
+        }, inv.parcelas.every(p => p.status === 'pago') ? '↩︎ Desfazer pagamento da fatura' : '✔️ Marcar fatura inteira como paga')) : null,
       inv.parcelas.length ? table([
         { label: 'Descrição', render: p => db.purchases.find(x => x.id === p.purchaseId)?.descricao || '—' },
         { label: 'Categoria', render: p => db.purchases.find(x => x.id === p.purchaseId)?.categoria || '—' },
