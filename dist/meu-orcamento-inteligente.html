@@ -1122,6 +1122,16 @@ function monthInstallments(ym) {
   return db.installments.filter(p => p.mes === ym && ATIVAS(p.status));
 }
 
+// Valor da parcela já descontada a fatia mensal do reembolso da compra (se reembolsável).
+// A fatura do cartão continua bruta (cardInvoice) — isso só vale para o orçamento/despesa real.
+function installmentNet(p) {
+  const compra = db.purchases.find(c => c.id === p.purchaseId);
+  if (!compra?.reembolsavel || !Number(compra.valorReembolsavel)) return Number(p.valor) || 0;
+  const totalParcelas = Number(compra.numParcelas) || 1;
+  const reembolsoPorParcela = Number(compra.valorReembolsavel) / totalParcelas;
+  return Math.max(0, (Number(p.valor) || 0) - reembolsoPorParcela);
+}
+
 function futureInstallmentsTotal(fromYm) {
   return sum(db.installments.filter(p => ymDiff(p.mes, fromYm) > 0 && ATIVAS(p.status)), p => p.valor);
 }
@@ -1207,7 +1217,7 @@ function monthSummary(ym) {
   const recorrentes = sum(recs, o => o.valor);
 
   const parcelas = monthInstallments(ym);
-  const parcelamentos = sum(parcelas, p => p.valor);
+  const parcelamentos = sum(parcelas, installmentNet);
 
   const provisoes = monthProvisions(ym);
   const investimentos = monthInvestPlanned();
@@ -1263,7 +1273,7 @@ function expensesByCategory(ym) {
   for (const o of recurringOccurrences(ym)) addTo(o.categoria, o.valor);
   for (const p of monthInstallments(ym)) {
     const compra = db.purchases.find(c => c.id === p.purchaseId);
-    addTo(compra?.categoria, Number(p.valor) || 0);
+    addTo(compra?.categoria, installmentNet(p));
   }
   return Object.entries(map).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
 }
@@ -1313,7 +1323,7 @@ function alertsFor(ym) {
   if (limPct > 0 && s.receitaSegura > 0) {
     for (let i = 1; i <= 6; i++) {
       const m = ymAdd(ym, i);
-      const val = sum(monthInstallments(m), p => p.valor);
+      const val = sum(monthInstallments(m), installmentNet);
       if (val > s.receitaSegura * limPct / 100) {
         push('aviso', `Em ${ymLabel(m)}, os parcelamentos (${fmt(val)}) ultrapassam ${limPct}% da renda segura atual.`);
         break;
@@ -1373,7 +1383,7 @@ function simulatePurchase({ valorTotal, numParcelas, mesInicio, cartaoId }) {
   return { valorParcela, meses };
 }
 
-return { monthIncomes, monthExpenses, expenseNet, recurringOccurrences, monthInstallments, futureInstallmentsTotal, cardInvoice, provisionMonthly, monthProvisions, monthProvisionDeposits, monthInvestPlanned, monthInvestDone, totalInvested, reserveTotal, reimbPending, reimbOutstanding, monthReimbursements, monthSummary, commitmentBreakdown, expensesByCategory, annualRows, alertsFor, simulatePurchase };
+return { monthIncomes, monthExpenses, expenseNet, recurringOccurrences, monthInstallments, installmentNet, futureInstallmentsTotal, cardInvoice, provisionMonthly, monthProvisions, monthProvisionDeposits, monthInvestPlanned, monthInvestDone, totalInvested, reserveTotal, reimbPending, reimbOutstanding, monthReimbursements, monthSummary, commitmentBreakdown, expensesByCategory, annualRows, alertsFor, simulatePurchase };
 })();
 
 __m['charts'] = (() => {
@@ -2200,7 +2210,10 @@ function purchaseFields() {
     { k: 'dataCompra', label: 'Data da compra', type: 'date', value: todayISO() },
     { k: 'categoria', label: 'Categoria', type: 'select', options: db.categoriesExpense.map(c => c.nome) },
     { k: 'valorTotal', label: 'Valor total (R$)', type: 'money',
-      onchange: v => { if (v.valorTotal && v.numParcelas && !v._vpManual) v.valorParcela = +(v.valorTotal / v.numParcelas).toFixed(2); } },
+      onchange: v => {
+        if (v.valorTotal && v.numParcelas && !v._vpManual) v.valorParcela = +(v.valorTotal / v.numParcelas).toFixed(2);
+        if (v.reembolsavel && !v._vrManual) v.valorReembolsavel = v.valorTotal;
+      } },
     { k: 'numParcelas', label: 'Quantidade de parcelas', type: 'number', required: true, min: 1, value: 1,
       onchange: v => { if (v.valorTotal && v.numParcelas && !v._vpManual) v.valorParcela = +(v.valorTotal / v.numParcelas).toFixed(2); } },
     { k: 'parcelaInicial', label: 'Número da parcela inicial', type: 'number', min: 1, value: 1,
@@ -2210,21 +2223,55 @@ function purchaseFields() {
     { k: 'cartaoId', label: 'Cartão', type: 'select', options: db.cards.map(c => [c.id, c.nome]), required: true },
     { k: 'mesInicio', label: 'Mês de início da cobrança', type: 'month', required: true, value: ymNow() },
     { k: 'responsavel', label: 'Responsável pelo pagamento', type: 'text' },
-    { k: 'reembolsavel', label: 'Compra reembolsável', type: 'check' },
+    { k: 'reembolsavel', label: 'Compra reembolsável / para outra pessoa', type: 'check',
+      onchange: v => { if (v.reembolsavel && !v.valorReembolsavel) v.valorReembolsavel = v.valorTotal || ''; } },
+    { k: 'pessoaId', label: 'Pessoa que vai reembolsar', type: 'select',
+      options: db.people.map(p => [p.id, p.nome]), show: v => v.reembolsavel,
+      help: db.people.length ? '' : 'Cadastre pessoas em Configurações.' },
+    { k: 'valorReembolsavel', label: 'Valor a reembolsar (R$)', type: 'money', show: v => v.reembolsavel,
+      help: 'Some automaticamente em Reembolsos, dividido mês a mês pelas parcelas.',
+      onchange: v => { v._vrManual = true; } },
     { k: 'obs', label: 'Observações', type: 'textarea', full: true },
   ];
 }
 
+// Ao salvar uma compra reembolsável, cria/atualiza o reembolso vinculado — sem retrabalho
+// em duas telas. O reembolso some sozinho se a compra deixar de ser reembolsável.
+function syncReimbursementPurchase(purchase) {
+  const existing = db.reimbursements.find(r => r.purchaseId === purchase.id);
+  if (purchase.reembolsavel && purchase.pessoaId && Number(purchase.valorReembolsavel) > 0) {
+    if (existing) {
+      update('reimbursements', existing.id, {
+        pessoaId: purchase.pessoaId, valorAReembolsar: Number(purchase.valorReembolsavel),
+        descricao: purchase.descricao, data: purchase.dataCompra,
+        valorTotalDespesa: Number(purchase.valorTotal), categoria: purchase.categoria,
+      });
+    } else {
+      add('reimbursements', {
+        purchaseId: purchase.id, pessoaId: purchase.pessoaId,
+        descricao: purchase.descricao, data: purchase.dataCompra, categoria: purchase.categoria,
+        valorTotalDespesa: Number(purchase.valorTotal), criterio: 'fixo', percentual: '',
+        valorAReembolsar: Number(purchase.valorReembolsavel), valorRecebido: 0,
+        status: 'pendente', dataSolicitacao: '', dataRecebimento: '', obs: '',
+      });
+    }
+  } else if (existing && ['pendente', 'solicitado'].includes(existing.status)) {
+    removeWhere('reimbursements', r => r.id === existing.id);
+  }
+}
+
 function savePurchase(vals, existingId) {
+  let purchase;
   if (existingId) {
     // Regerar parcelas mantendo status pago das já quitadas quando possível
     removeWhere('installments', p => p.purchaseId === existingId);
-    const purchase = update('purchases', existingId, vals);
+    purchase = update('purchases', existingId, vals);
     db.installments.push(...generateInstallments(purchase));
   } else {
-    const purchase = add('purchases', vals);
+    purchase = add('purchases', vals);
     db.installments.push(...generateInstallments(purchase));
   }
+  syncReimbursementPurchase(purchase);
   save();
 }
 
@@ -2261,6 +2308,8 @@ function render(el, rerender) {
         rowActions(
           ['✏️', () => editCard(c, rerender), 'Editar cartão'],
           ['🗑', () => confirmModal(`Excluir o cartão "${c.nome}"? As compras e parcelas vinculadas também serão excluídas.`, () => {
+            const idsCompras = db.purchases.filter(p => p.cartaoId === c.id).map(p => p.id);
+            removeWhere('reimbursements', r => idsCompras.includes(r.purchaseId));
             removeWhere('purchases', p => p.cartaoId === c.id);
             removeWhere('installments', p => p.cartaoId === c.id);
             remove('cards', c.id);
@@ -2301,7 +2350,8 @@ function render(el, rerender) {
   const purchases = [...db.purchases].sort((a, b) => (b.mesInicio || '').localeCompare(a.mesInicio || ''));
   el.append(card('Compras parceladas cadastradas',
     table([
-      { label: 'Descrição', k: 'descricao' },
+      { label: 'Descrição', render: p => h('span', {}, p.descricao,
+          p.reembolsavel ? h('span', { title: `Reembolsável${p.pessoaId ? ' — ' + (db.people.find(x => x.id === p.pessoaId)?.nome || '') : ''}`, style: 'margin-left:5px' }, '🤝') : null) },
       { label: 'Cartão', render: p => db.cards.find(c => c.id === p.cartaoId)?.nome || '—' },
       { label: 'Categoria', k: 'categoria' },
       { label: 'Parcelas', render: p => `${p.numParcelas}× de ${fmt(p.valorParcela || (p.valorTotal / p.numParcelas))}` },
@@ -2309,8 +2359,10 @@ function render(el, rerender) {
       { label: 'Restante', render: p => fmt(sum(db.installments.filter(i => i.purchaseId === p.id && i.status !== 'pago' && ymDiff(i.mes, ym) >= 0), i => i.valor)), right: true },
       { label: '', render: p => rowActions(
           ['✏️', () => formModal('Editar compra parcelada', purchaseFields(), p, vals => { savePurchase(vals, p.id); rerender(); }, { wide: true }), 'Editar'],
-          ['🗑', () => confirmModal(`Excluir "${p.descricao}" e todas as suas parcelas?`, () => {
+          ['🗑', () => confirmModal(`Excluir "${p.descricao}" e todas as suas parcelas?${p.reembolsavel ? ' O reembolso vinculado também será removido, se ainda não tiver recebimento.' : ''}`, () => {
             removeWhere('installments', i => i.purchaseId === p.id);
+            const reemb = db.reimbursements.find(r => r.purchaseId === p.id);
+            if (reemb && ['pendente', 'solicitado'].includes(reemb.status)) removeWhere('reimbursements', r => r.id === reemb.id);
             remove('purchases', p.id);
             rerender();
           }), 'Excluir']), right: true },
@@ -3064,7 +3116,7 @@ __m['fechamento'] = (() => {
 // Fechamento mensal guiado: checklist, indicadores e diagnóstico automático.
 const { h, fmt, ymLabel, ymAdd, ymDiff, sum, ymOf } = __m['utils'];
 const { db, ui } = __m['store'];
-const { monthSummary, monthExpenses, monthIncomes, recurringOccurrences, monthInstallments, expenseNet, monthInvestDone, monthProvisionDeposits, reimbPending, cardInvoice, } = __m['calc'];
+const { monthSummary, monthExpenses, monthIncomes, recurringOccurrences, monthInstallments, expenseNet, installmentNet, monthInvestDone, monthProvisionDeposits, reimbPending, cardInvoice, } = __m['calc'];
 const { card, statCard, table } = __m['ui'];
 
 function render(el) {
@@ -3075,7 +3127,7 @@ function render(el) {
   const receitasPendentes = s.incomes.filter(i => i.status === 'prevista' || i.status === 'atrasada');
   const recorrentesAbertas = s.recs.filter(o => o.status !== 'pago');
   const semCategoria = s.expenses.filter(e => !e.categoria);
-  const semResponsavel = s.expenses.filter(e => e.reembolsavel && !e.pessoaId);
+  const semResponsavel = [...s.expenses.filter(e => e.reembolsavel && !e.pessoaId), ...db.purchases.filter(p => p.reembolsavel && !p.pessoaId)];
   const reembolsosPendentes = db.reimbursements.filter(r => ['pendente', 'solicitado', 'parcial', 'atrasado'].includes(r.status));
   const vencidas = [...s.expenses.filter(e => e.status === 'vencido'), ...s.recs.filter(o => o.status === 'vencido')];
   const faturasAbertas = db.cards.filter(c => { const inv = cardInvoice(c.id, ym); return inv.total > 0 && inv.pago < inv.total; });
@@ -3111,7 +3163,7 @@ function render(el) {
   const despesaLiquida =
     sum(s.expenses.filter(e => ['pago', 'reembolsado', 'parcial'].includes(e.status)), expenseNet) +
     sum(s.recs.filter(o => o.status === 'pago'), o => o.valor) +
-    sum(s.parcelas.filter(p => p.status === 'pago'), p => p.valor);
+    sum(s.parcelas.filter(p => p.status === 'pago'), installmentNet);
   const saldoFinal = receitaRealizada - despesaRealizada - monthInvestDone(ym) - monthProvisionDeposits(ym);
   const diferenca = saldoFinal - s.saldoPrevisto;
 
@@ -3264,7 +3316,7 @@ __m['relatorios'] = (() => {
 // Relatórios com filtros e exportação CSV.
 const { h, fmt, ymShort, ymOf, sum, toCSV, downloadFile } = __m['utils'];
 const { db, ui, STATUS_DESPESA, CLASSIFICACAO_DESPESA } = __m['store'];
-const { annualRows, expenseNet, recurringOccurrences, monthInstallments, reimbPending, provisionMonthly } = __m['calc'];
+const { annualRows, expenseNet, installmentNet, recurringOccurrences, monthInstallments, reimbPending, provisionMonthly } = __m['calc'];
 const { card, table, badge, statCard } = __m['ui'];
 const { donut } = __m['charts'];
 
@@ -3368,7 +3420,7 @@ function categoria(el, year) {
     for (const o of recurringOccurrences(ym)) map[o.categoria || 'Sem categoria'] = (map[o.categoria || 'Sem categoria'] || 0) + o.valor;
     for (const p of monthInstallments(ym)) {
       const compra = db.purchases.find(c => c.id === p.purchaseId);
-      map[compra?.categoria || 'Sem categoria'] = (map[compra?.categoria || 'Sem categoria'] || 0) + p.valor;
+      map[compra?.categoria || 'Sem categoria'] = (map[compra?.categoria || 'Sem categoria'] || 0) + installmentNet(p);
     }
   }
   const data = Object.entries(map).sort((a, b) => b[1] - a[1]);
@@ -3457,7 +3509,7 @@ __m['carro'] = (() => {
 // Módulo do carro: custos consolidados de todas as despesas ligadas ao carro.
 const { h, fmt, ymShort, ymAdd, ymOf, sum } = __m['utils'];
 const { db, ui, CATEGORIAS_CARRO } = __m['store'];
-const { monthExpenses, recurringOccurrences, monthInstallments, expenseNet, provisionMonthly } = __m['calc'];
+const { monthExpenses, recurringOccurrences, monthInstallments, expenseNet, installmentNet, provisionMonthly } = __m['calc'];
 const { card, statCard, table, badge } = __m['ui'];
 const { bars, donut, CHART_COLORS } = __m['charts'];
 
@@ -3479,7 +3531,7 @@ function carItems(ym) {
   for (const p of monthInstallments(ym)) {
     const compra = db.purchases.find(c => c.id === p.purchaseId);
     if (compra && isCarro(compra.categoria)) {
-      out.push({ data: `${p.mes}-01`, descricao: `${compra.descricao} (${p.numero}/${p.total})`, sub: compra.subcategoria || compra.categoria, valor: p.valor, status: p.status });
+      out.push({ data: `${p.mes}-01`, descricao: `${compra.descricao} (${p.numero}/${p.total})`, sub: compra.subcategoria || compra.categoria, valor: installmentNet(p), status: p.status });
     }
   }
   return out;

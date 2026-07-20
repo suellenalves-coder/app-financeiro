@@ -3,7 +3,7 @@ import { h, fmt, ymLabel, ymAdd, ymDiff, sum, ymOf } from '../utils.js';
 import { db, ui } from '../store.js';
 import {
   monthSummary, monthExpenses, monthIncomes, recurringOccurrences, monthInstallments,
-  expenseNet, monthInvestDone, monthProvisionDeposits, reimbPending, cardInvoice,
+  expenseNet, installmentNet, monthInvestDone, monthProvisionDeposits, reimbPending, cardInvoice,
 } from '../calc.js';
 import { card, statCard, table } from '../ui.js';
 
@@ -15,7 +15,7 @@ export function render(el) {
   const receitasPendentes = s.incomes.filter(i => i.status === 'prevista' || i.status === 'atrasada');
   const recorrentesAbertas = s.recs.filter(o => o.status !== 'pago');
   const semCategoria = s.expenses.filter(e => !e.categoria);
-  const semResponsavel = s.expenses.filter(e => e.reembolsavel && !e.pessoaId);
+  const semResponsavel = [...s.expenses.filter(e => e.reembolsavel && !e.pessoaId), ...db.purchases.filter(p => p.reembolsavel && !p.pessoaId)];
   const reembolsosPendentes = db.reimbursements.filter(r => ['pendente', 'solicitado', 'parcial', 'atrasado'].includes(r.status));
   const vencidas = [...s.expenses.filter(e => e.status === 'vencido'), ...s.recs.filter(o => o.status === 'vencido')];
   const faturasAbertas = db.cards.filter(c => { const inv = cardInvoice(c.id, ym); return inv.total > 0 && inv.pago < inv.total; });
@@ -51,7 +51,7 @@ export function render(el) {
   const despesaLiquida =
     sum(s.expenses.filter(e => ['pago', 'reembolsado', 'parcial'].includes(e.status)), expenseNet) +
     sum(s.recs.filter(o => o.status === 'pago'), o => o.valor) +
-    sum(s.parcelas.filter(p => p.status === 'pago'), p => p.valor);
+    sum(s.parcelas.filter(p => p.status === 'pago'), installmentNet);
   const saldoFinal = receitaRealizada - despesaRealizada - monthInvestDone(ym) - monthProvisionDeposits(ym);
   const diferenca = saldoFinal - s.saldoPrevisto;
 

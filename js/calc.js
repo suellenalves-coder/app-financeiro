@@ -67,6 +67,16 @@ export function monthInstallments(ym) {
   return db.installments.filter(p => p.mes === ym && ATIVAS(p.status));
 }
 
+// Valor da parcela já descontada a fatia mensal do reembolso da compra (se reembolsável).
+// A fatura do cartão continua bruta (cardInvoice) — isso só vale para o orçamento/despesa real.
+export function installmentNet(p) {
+  const compra = db.purchases.find(c => c.id === p.purchaseId);
+  if (!compra?.reembolsavel || !Number(compra.valorReembolsavel)) return Number(p.valor) || 0;
+  const totalParcelas = Number(compra.numParcelas) || 1;
+  const reembolsoPorParcela = Number(compra.valorReembolsavel) / totalParcelas;
+  return Math.max(0, (Number(p.valor) || 0) - reembolsoPorParcela);
+}
+
 export function futureInstallmentsTotal(fromYm) {
   return sum(db.installments.filter(p => ymDiff(p.mes, fromYm) > 0 && ATIVAS(p.status)), p => p.valor);
 }
@@ -152,7 +162,7 @@ export function monthSummary(ym) {
   const recorrentes = sum(recs, o => o.valor);
 
   const parcelas = monthInstallments(ym);
-  const parcelamentos = sum(parcelas, p => p.valor);
+  const parcelamentos = sum(parcelas, installmentNet);
 
   const provisoes = monthProvisions(ym);
   const investimentos = monthInvestPlanned();
@@ -208,7 +218,7 @@ export function expensesByCategory(ym) {
   for (const o of recurringOccurrences(ym)) addTo(o.categoria, o.valor);
   for (const p of monthInstallments(ym)) {
     const compra = db.purchases.find(c => c.id === p.purchaseId);
-    addTo(compra?.categoria, Number(p.valor) || 0);
+    addTo(compra?.categoria, installmentNet(p));
   }
   return Object.entries(map).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
 }
@@ -258,7 +268,7 @@ export function alertsFor(ym) {
   if (limPct > 0 && s.receitaSegura > 0) {
     for (let i = 1; i <= 6; i++) {
       const m = ymAdd(ym, i);
-      const val = sum(monthInstallments(m), p => p.valor);
+      const val = sum(monthInstallments(m), installmentNet);
       if (val > s.receitaSegura * limPct / 100) {
         push('aviso', `Em ${ymLabel(m)}, os parcelamentos (${fmt(val)}) ultrapassam ${limPct}% da renda segura atual.`);
         break;

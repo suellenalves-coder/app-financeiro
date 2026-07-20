@@ -1,7 +1,7 @@
 // Módulo do carro: custos consolidados de todas as despesas ligadas ao carro.
 import { h, fmt, ymShort, ymAdd, ymOf, sum } from '../utils.js';
 import { db, ui, CATEGORIAS_CARRO } from '../store.js';
-import { monthExpenses, recurringOccurrences, monthInstallments, expenseNet, provisionMonthly } from '../calc.js';
+import { monthExpenses, recurringOccurrences, monthInstallments, expenseNet, installmentNet, provisionMonthly } from '../calc.js';
 import { card, statCard, table, badge } from '../ui.js';
 import { bars, donut, CHART_COLORS } from '../charts.js';
 
@@ -23,7 +23,7 @@ function carItems(ym) {
   for (const p of monthInstallments(ym)) {
     const compra = db.purchases.find(c => c.id === p.purchaseId);
     if (compra && isCarro(compra.categoria)) {
-      out.push({ data: `${p.mes}-01`, descricao: `${compra.descricao} (${p.numero}/${p.total})`, sub: compra.subcategoria || compra.categoria, valor: p.valor, status: p.status });
+      out.push({ data: `${p.mes}-01`, descricao: `${compra.descricao} (${p.numero}/${p.total})`, sub: compra.subcategoria || compra.categoria, valor: installmentNet(p), status: p.status });
     }
   }
   return out;

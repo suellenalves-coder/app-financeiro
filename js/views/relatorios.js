@@ -1,7 +1,7 @@
 // Relatórios com filtros e exportação CSV.
 import { h, fmt, ymShort, ymOf, sum, toCSV, downloadFile } from '../utils.js';
 import { db, ui, STATUS_DESPESA, CLASSIFICACAO_DESPESA } from '../store.js';
-import { annualRows, expenseNet, recurringOccurrences, monthInstallments, reimbPending, provisionMonthly } from '../calc.js';
+import { annualRows, expenseNet, installmentNet, recurringOccurrences, monthInstallments, reimbPending, provisionMonthly } from '../calc.js';
 import { card, table, badge, statCard } from '../ui.js';
 import { donut } from '../charts.js';
 
@@ -105,7 +105,7 @@ function categoria(el, year) {
     for (const o of recurringOccurrences(ym)) map[o.categoria || 'Sem categoria'] = (map[o.categoria || 'Sem categoria'] || 0) + o.valor;
     for (const p of monthInstallments(ym)) {
       const compra = db.purchases.find(c => c.id === p.purchaseId);
-      map[compra?.categoria || 'Sem categoria'] = (map[compra?.categoria || 'Sem categoria'] || 0) + p.valor;
+      map[compra?.categoria || 'Sem categoria'] = (map[compra?.categoria || 'Sem categoria'] || 0) + installmentNet(p);
     }
   }
   const data = Object.entries(map).sort((a, b) => b[1] - a[1]);
