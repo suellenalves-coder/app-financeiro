@@ -1,5 +1,5 @@
 // Cartões, compras parceladas, faturas, mapa de parcelas futuras e importação em massa.
-import { h, fmt, todayISO, ymNow, ymAdd, ymDiff, ymShort, ymLabel, sum, uid, parseTable, parseMoney, parseYm } from '../utils.js';
+import { h, fmt, todayISO, ymNow, ymAdd, ymDiff, ymShort, ymLabel, dateInMonth, sum, uid, parseTable, parseMoney, parseYm } from '../utils.js';
 import { db, ui, add, update, remove, removeWhere, save } from '../store.js';
 import { monthInstallments, cardInvoice, futureInstallmentsTotal, monthSummary } from '../calc.js';
 import { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } from '../ui.js';
@@ -44,56 +44,80 @@ function purchaseFields() {
       onchange: v => { v._vpManual = true; } },
     { k: 'cartaoId', label: 'Cartão', type: 'select', options: db.cards.map(c => [c.id, c.nome]), required: true },
     { k: 'mesInicio', label: 'Mês de início da cobrança', type: 'month', required: true, value: ymNow() },
-    { k: 'responsavel', label: 'Responsável pelo pagamento', type: 'text' },
     { k: 'reembolsavel', label: 'Compra reembolsável / para outra pessoa', type: 'check',
       onchange: v => { if (v.reembolsavel && !v.valorReembolsavel) v.valorReembolsavel = v.valorTotal || ''; } },
+    { k: 'responsavel', label: 'Responsável pelo pagamento', type: 'text', show: v => !v.reembolsavel,
+      help: 'Some vazio quando a compra é reembolsável — a pessoa já é definida abaixo.' },
     { k: 'pessoaId', label: 'Pessoa que vai reembolsar', type: 'select',
       options: db.people.map(p => [p.id, p.nome]), show: v => v.reembolsavel,
       help: db.people.length ? '' : 'Cadastre pessoas em Configurações.' },
     { k: 'valorReembolsavel', label: 'Valor a reembolsar (R$)', type: 'money', show: v => v.reembolsavel,
-      help: 'Some automaticamente em Reembolsos, dividido mês a mês pelas parcelas.',
+      help: 'Divide automaticamente pelo número de parcelas: cada mês vira um reembolso separado em Reembolsos.',
       onchange: v => { v._vrManual = true; } },
     { k: 'obs', label: 'Observações', type: 'textarea', full: true },
   ];
 }
 
-// Ao salvar uma compra reembolsável, cria/atualiza o reembolso vinculado — sem retrabalho
-// em duas telas. O reembolso some sozinho se a compra deixar de ser reembolsável.
-function syncReimbursementPurchase(purchase) {
-  const existing = db.reimbursements.find(r => r.purchaseId === purchase.id);
-  if (purchase.reembolsavel && purchase.pessoaId && Number(purchase.valorReembolsavel) > 0) {
-    if (existing) {
-      update('reimbursements', existing.id, {
-        pessoaId: purchase.pessoaId, valorAReembolsar: Number(purchase.valorReembolsavel),
-        descricao: purchase.descricao, data: purchase.dataCompra,
-        valorTotalDespesa: Number(purchase.valorTotal), categoria: purchase.categoria,
-      });
+// Ao salvar uma compra reembolsável, cria/atualiza UM REEMBOLSO POR MÊS (por parcela) —
+// assim dá pra dizer exatamente quanto a pessoa deve *naquele mês*, sem retrabalho.
+// A chave de sincronização é (purchaseId, mês da parcela): estável mesmo quando a compra
+// é editada e as parcelas são regeradas com novos ids. Reembolsos já pagos/parciais nunca
+// são apagados ou sobrescritos — preserva o histórico de recebimento.
+function syncReimbursementsForPurchase(purchase, installments) {
+  const existing = db.reimbursements.filter(r => r.purchaseId === purchase.id);
+  const querReembolso = purchase.reembolsavel && purchase.pessoaId && Number(purchase.valorReembolsavel) > 0;
+
+  if (!querReembolso) {
+    for (const r of existing) if (['pendente', 'solicitado'].includes(r.status)) removeWhere('reimbursements', x => x.id === r.id);
+    return;
+  }
+
+  const card = db.cards.find(c => c.id === purchase.cartaoId);
+  const totalParcelas = installments.length || 1;
+  const valorPorMes = Number(purchase.valorReembolsavel) / totalParcelas;
+  const mesesAtuais = new Set(installments.map(p => p.mes));
+
+  for (const p of installments) {
+    const found = existing.find(r => r.mes === p.mes);
+    if (found) {
+      if (!['pago', 'parcial'].includes(found.status)) {
+        update('reimbursements', found.id, {
+          pessoaId: purchase.pessoaId, valorAReembolsar: +valorPorMes.toFixed(2),
+          descricao: purchase.descricao, categoria: purchase.categoria, valorTotalDespesa: Number(p.valor),
+        });
+      }
     } else {
       add('reimbursements', {
-        purchaseId: purchase.id, pessoaId: purchase.pessoaId,
-        descricao: purchase.descricao, data: purchase.dataCompra, categoria: purchase.categoria,
-        valorTotalDespesa: Number(purchase.valorTotal), criterio: 'fixo', percentual: '',
-        valorAReembolsar: Number(purchase.valorReembolsavel), valorRecebido: 0,
+        purchaseId: purchase.id, mes: p.mes, pessoaId: purchase.pessoaId,
+        descricao: purchase.descricao, data: dateInMonth(p.mes, Number(card?.diaVencimento) || 1),
+        categoria: purchase.categoria, valorTotalDespesa: Number(p.valor), criterio: 'fixo', percentual: '',
+        valorAReembolsar: +valorPorMes.toFixed(2), valorRecebido: 0,
         status: 'pendente', dataSolicitacao: '', dataRecebimento: '', obs: '',
       });
     }
-  } else if (existing && ['pendente', 'solicitado'].includes(existing.status)) {
-    removeWhere('reimbursements', r => r.id === existing.id);
+  }
+  // Parcela removida (reduziu o número de parcelas): some o reembolso daquele mês, se ainda não foi pago.
+  for (const r of existing) {
+    if (r.mes && !mesesAtuais.has(r.mes) && ['pendente', 'solicitado'].includes(r.status)) {
+      removeWhere('reimbursements', x => x.id === r.id);
+    }
   }
 }
 
 function savePurchase(vals, existingId) {
-  let purchase;
+  let purchase, installments;
   if (existingId) {
     // Regerar parcelas mantendo status pago das já quitadas quando possível
     removeWhere('installments', p => p.purchaseId === existingId);
     purchase = update('purchases', existingId, vals);
-    db.installments.push(...generateInstallments(purchase));
+    installments = generateInstallments(purchase);
+    db.installments.push(...installments);
   } else {
     purchase = add('purchases', vals);
-    db.installments.push(...generateInstallments(purchase));
+    installments = generateInstallments(purchase);
+    db.installments.push(...installments);
   }
-  syncReimbursementPurchase(purchase);
+  syncReimbursementsForPurchase(purchase, installments);
   save();
 }
 
@@ -131,7 +155,7 @@ export function render(el, rerender) {
           ['✏️', () => editCard(c, rerender), 'Editar cartão'],
           ['🗑', () => confirmModal(`Excluir o cartão "${c.nome}"? As compras e parcelas vinculadas também serão excluídas.`, () => {
             const idsCompras = db.purchases.filter(p => p.cartaoId === c.id).map(p => p.id);
-            removeWhere('reimbursements', r => idsCompras.includes(r.purchaseId));
+            removeWhere('reimbursements', r => idsCompras.includes(r.purchaseId) && ['pendente', 'solicitado'].includes(r.status));
             removeWhere('purchases', p => p.cartaoId === c.id);
             removeWhere('installments', p => p.cartaoId === c.id);
             remove('cards', c.id);
@@ -181,10 +205,9 @@ export function render(el, rerender) {
       { label: 'Restante', render: p => fmt(sum(db.installments.filter(i => i.purchaseId === p.id && i.status !== 'pago' && ymDiff(i.mes, ym) >= 0), i => i.valor)), right: true },
       { label: '', render: p => rowActions(
           ['✏️', () => formModal('Editar compra parcelada', purchaseFields(), p, vals => { savePurchase(vals, p.id); rerender(); }, { wide: true }), 'Editar'],
-          ['🗑', () => confirmModal(`Excluir "${p.descricao}" e todas as suas parcelas?${p.reembolsavel ? ' O reembolso vinculado também será removido, se ainda não tiver recebimento.' : ''}`, () => {
+          ['🗑', () => confirmModal(`Excluir "${p.descricao}" e todas as suas parcelas?${p.reembolsavel ? ' Os reembolsos vinculados ainda não recebidos também serão removidos.' : ''}`, () => {
             removeWhere('installments', i => i.purchaseId === p.id);
-            const reemb = db.reimbursements.find(r => r.purchaseId === p.id);
-            if (reemb && ['pendente', 'solicitado'].includes(reemb.status)) removeWhere('reimbursements', r => r.id === reemb.id);
+            removeWhere('reimbursements', r => r.purchaseId === p.id && ['pendente', 'solicitado'].includes(r.status));
             remove('purchases', p.id);
             rerender();
           }), 'Excluir']), right: true },

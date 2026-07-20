@@ -1192,6 +1192,12 @@ function reimbPending(r) {
   return Math.max(0, (Number(r.valorAReembolsar) || 0) - (Number(r.valorRecebido) || 0));
 }
 
+// Mês de competência do reembolso: explícito (parcelas de cartão, uma por mês)
+// ou derivado da data (reembolsos avulsos/de despesa, que valem só naquele mês).
+function reimbMonth(r) {
+  return r.mes || ymOf(r.data);
+}
+
 function reimbOutstanding() {
   return sum(db.reimbursements.filter(r => ['pendente', 'solicitado', 'parcial', 'atrasado'].includes(r.status)), reimbPending);
 }
@@ -1383,7 +1389,7 @@ function simulatePurchase({ valorTotal, numParcelas, mesInicio, cartaoId }) {
   return { valorParcela, meses };
 }
 
-return { monthIncomes, monthExpenses, expenseNet, recurringOccurrences, monthInstallments, installmentNet, futureInstallmentsTotal, cardInvoice, provisionMonthly, monthProvisions, monthProvisionDeposits, monthInvestPlanned, monthInvestDone, totalInvested, reserveTotal, reimbPending, reimbOutstanding, monthReimbursements, monthSummary, commitmentBreakdown, expensesByCategory, annualRows, alertsFor, simulatePurchase };
+return { monthIncomes, monthExpenses, expenseNet, recurringOccurrences, monthInstallments, installmentNet, futureInstallmentsTotal, cardInvoice, provisionMonthly, monthProvisions, monthProvisionDeposits, monthInvestPlanned, monthInvestDone, totalInvested, reserveTotal, reimbPending, reimbMonth, reimbOutstanding, monthReimbursements, monthSummary, commitmentBreakdown, expensesByCategory, annualRows, alertsFor, simulatePurchase };
 })();
 
 __m['charts'] = (() => {
@@ -2177,7 +2183,7 @@ return { fields, syncReimbursement, quickAdd, markPaid, render };
 
 __m['cartoes'] = (() => {
 // Cartões, compras parceladas, faturas, mapa de parcelas futuras e importação em massa.
-const { h, fmt, todayISO, ymNow, ymAdd, ymDiff, ymShort, ymLabel, sum, uid, parseTable, parseMoney, parseYm } = __m['utils'];
+const { h, fmt, todayISO, ymNow, ymAdd, ymDiff, ymShort, ymLabel, dateInMonth, sum, uid, parseTable, parseMoney, parseYm } = __m['utils'];
 const { db, ui, add, update, remove, removeWhere, save } = __m['store'];
 const { monthInstallments, cardInvoice, futureInstallmentsTotal, monthSummary } = __m['calc'];
 const { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } = __m['ui'];
@@ -2222,56 +2228,80 @@ function purchaseFields() {
       onchange: v => { v._vpManual = true; } },
     { k: 'cartaoId', label: 'Cartão', type: 'select', options: db.cards.map(c => [c.id, c.nome]), required: true },
     { k: 'mesInicio', label: 'Mês de início da cobrança', type: 'month', required: true, value: ymNow() },
-    { k: 'responsavel', label: 'Responsável pelo pagamento', type: 'text' },
     { k: 'reembolsavel', label: 'Compra reembolsável / para outra pessoa', type: 'check',
       onchange: v => { if (v.reembolsavel && !v.valorReembolsavel) v.valorReembolsavel = v.valorTotal || ''; } },
+    { k: 'responsavel', label: 'Responsável pelo pagamento', type: 'text', show: v => !v.reembolsavel,
+      help: 'Some vazio quando a compra é reembolsável — a pessoa já é definida abaixo.' },
     { k: 'pessoaId', label: 'Pessoa que vai reembolsar', type: 'select',
       options: db.people.map(p => [p.id, p.nome]), show: v => v.reembolsavel,
       help: db.people.length ? '' : 'Cadastre pessoas em Configurações.' },
     { k: 'valorReembolsavel', label: 'Valor a reembolsar (R$)', type: 'money', show: v => v.reembolsavel,
-      help: 'Some automaticamente em Reembolsos, dividido mês a mês pelas parcelas.',
+      help: 'Divide automaticamente pelo número de parcelas: cada mês vira um reembolso separado em Reembolsos.',
       onchange: v => { v._vrManual = true; } },
     { k: 'obs', label: 'Observações', type: 'textarea', full: true },
   ];
 }
 
-// Ao salvar uma compra reembolsável, cria/atualiza o reembolso vinculado — sem retrabalho
-// em duas telas. O reembolso some sozinho se a compra deixar de ser reembolsável.
-function syncReimbursementPurchase(purchase) {
-  const existing = db.reimbursements.find(r => r.purchaseId === purchase.id);
-  if (purchase.reembolsavel && purchase.pessoaId && Number(purchase.valorReembolsavel) > 0) {
-    if (existing) {
-      update('reimbursements', existing.id, {
-        pessoaId: purchase.pessoaId, valorAReembolsar: Number(purchase.valorReembolsavel),
-        descricao: purchase.descricao, data: purchase.dataCompra,
-        valorTotalDespesa: Number(purchase.valorTotal), categoria: purchase.categoria,
-      });
+// Ao salvar uma compra reembolsável, cria/atualiza UM REEMBOLSO POR MÊS (por parcela) —
+// assim dá pra dizer exatamente quanto a pessoa deve *naquele mês*, sem retrabalho.
+// A chave de sincronização é (purchaseId, mês da parcela): estável mesmo quando a compra
+// é editada e as parcelas são regeradas com novos ids. Reembolsos já pagos/parciais nunca
+// são apagados ou sobrescritos — preserva o histórico de recebimento.
+function syncReimbursementsForPurchase(purchase, installments) {
+  const existing = db.reimbursements.filter(r => r.purchaseId === purchase.id);
+  const querReembolso = purchase.reembolsavel && purchase.pessoaId && Number(purchase.valorReembolsavel) > 0;
+
+  if (!querReembolso) {
+    for (const r of existing) if (['pendente', 'solicitado'].includes(r.status)) removeWhere('reimbursements', x => x.id === r.id);
+    return;
+  }
+
+  const card = db.cards.find(c => c.id === purchase.cartaoId);
+  const totalParcelas = installments.length || 1;
+  const valorPorMes = Number(purchase.valorReembolsavel) / totalParcelas;
+  const mesesAtuais = new Set(installments.map(p => p.mes));
+
+  for (const p of installments) {
+    const found = existing.find(r => r.mes === p.mes);
+    if (found) {
+      if (!['pago', 'parcial'].includes(found.status)) {
+        update('reimbursements', found.id, {
+          pessoaId: purchase.pessoaId, valorAReembolsar: +valorPorMes.toFixed(2),
+          descricao: purchase.descricao, categoria: purchase.categoria, valorTotalDespesa: Number(p.valor),
+        });
+      }
     } else {
       add('reimbursements', {
-        purchaseId: purchase.id, pessoaId: purchase.pessoaId,
-        descricao: purchase.descricao, data: purchase.dataCompra, categoria: purchase.categoria,
-        valorTotalDespesa: Number(purchase.valorTotal), criterio: 'fixo', percentual: '',
-        valorAReembolsar: Number(purchase.valorReembolsavel), valorRecebido: 0,
+        purchaseId: purchase.id, mes: p.mes, pessoaId: purchase.pessoaId,
+        descricao: purchase.descricao, data: dateInMonth(p.mes, Number(card?.diaVencimento) || 1),
+        categoria: purchase.categoria, valorTotalDespesa: Number(p.valor), criterio: 'fixo', percentual: '',
+        valorAReembolsar: +valorPorMes.toFixed(2), valorRecebido: 0,
         status: 'pendente', dataSolicitacao: '', dataRecebimento: '', obs: '',
       });
     }
-  } else if (existing && ['pendente', 'solicitado'].includes(existing.status)) {
-    removeWhere('reimbursements', r => r.id === existing.id);
+  }
+  // Parcela removida (reduziu o número de parcelas): some o reembolso daquele mês, se ainda não foi pago.
+  for (const r of existing) {
+    if (r.mes && !mesesAtuais.has(r.mes) && ['pendente', 'solicitado'].includes(r.status)) {
+      removeWhere('reimbursements', x => x.id === r.id);
+    }
   }
 }
 
 function savePurchase(vals, existingId) {
-  let purchase;
+  let purchase, installments;
   if (existingId) {
     // Regerar parcelas mantendo status pago das já quitadas quando possível
     removeWhere('installments', p => p.purchaseId === existingId);
     purchase = update('purchases', existingId, vals);
-    db.installments.push(...generateInstallments(purchase));
+    installments = generateInstallments(purchase);
+    db.installments.push(...installments);
   } else {
     purchase = add('purchases', vals);
-    db.installments.push(...generateInstallments(purchase));
+    installments = generateInstallments(purchase);
+    db.installments.push(...installments);
   }
-  syncReimbursementPurchase(purchase);
+  syncReimbursementsForPurchase(purchase, installments);
   save();
 }
 
@@ -2309,7 +2339,7 @@ function render(el, rerender) {
           ['✏️', () => editCard(c, rerender), 'Editar cartão'],
           ['🗑', () => confirmModal(`Excluir o cartão "${c.nome}"? As compras e parcelas vinculadas também serão excluídas.`, () => {
             const idsCompras = db.purchases.filter(p => p.cartaoId === c.id).map(p => p.id);
-            removeWhere('reimbursements', r => idsCompras.includes(r.purchaseId));
+            removeWhere('reimbursements', r => idsCompras.includes(r.purchaseId) && ['pendente', 'solicitado'].includes(r.status));
             removeWhere('purchases', p => p.cartaoId === c.id);
             removeWhere('installments', p => p.cartaoId === c.id);
             remove('cards', c.id);
@@ -2359,10 +2389,9 @@ function render(el, rerender) {
       { label: 'Restante', render: p => fmt(sum(db.installments.filter(i => i.purchaseId === p.id && i.status !== 'pago' && ymDiff(i.mes, ym) >= 0), i => i.valor)), right: true },
       { label: '', render: p => rowActions(
           ['✏️', () => formModal('Editar compra parcelada', purchaseFields(), p, vals => { savePurchase(vals, p.id); rerender(); }, { wide: true }), 'Editar'],
-          ['🗑', () => confirmModal(`Excluir "${p.descricao}" e todas as suas parcelas?${p.reembolsavel ? ' O reembolso vinculado também será removido, se ainda não tiver recebimento.' : ''}`, () => {
+          ['🗑', () => confirmModal(`Excluir "${p.descricao}" e todas as suas parcelas?${p.reembolsavel ? ' Os reembolsos vinculados ainda não recebidos também serão removidos.' : ''}`, () => {
             removeWhere('installments', i => i.purchaseId === p.id);
-            const reemb = db.reimbursements.find(r => r.purchaseId === p.id);
-            if (reemb && ['pendente', 'solicitado'].includes(reemb.status)) removeWhere('reimbursements', r => r.id === reemb.id);
+            removeWhere('reimbursements', r => r.purchaseId === p.id && ['pendente', 'solicitado'].includes(r.status));
             remove('purchases', p.id);
             rerender();
           }), 'Excluir']), right: true },
@@ -2803,10 +2832,10 @@ return { render };
 })();
 
 __m['reembolsos'] = (() => {
-// Reembolsos: resumo por pessoa, detalhe, recebimento parcial e mensagem para WhatsApp.
-const { h, fmt, fmtDate, todayISO, sum } = __m['utils'];
-const { db, add, update, remove, save, STATUS_REEMBOLSO, CRITERIOS_DIVISAO, FORMAS_PAGAMENTO } = __m['store'];
-const { reimbPending, reimbOutstanding } = __m['calc'];
+// Reembolsos: resumo por pessoa (mês a mês), detalhe, recebimento parcial e mensagem para WhatsApp.
+const { h, fmt, fmtDate, todayISO, sum, ymShort, ymLabel } = __m['utils'];
+const { db, ui, add, update, remove, save, STATUS_REEMBOLSO, CRITERIOS_DIVISAO, FORMAS_PAGAMENTO } = __m['store'];
+const { reimbPending, reimbOutstanding, reimbMonth } = __m['calc'];
 const { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } = __m['ui'];
 
 let pessoaSelecionada = null;
@@ -2843,78 +2872,86 @@ function recalc(v) {
 function render(el, rerender) {
   if (pessoaSelecionada) return renderPessoa(el, rerender);
 
+  const ym = ui.month;
   const ativos = db.reimbursements.filter(r => !['cancelado'].includes(r.status));
+  const doMes = ativos.filter(r => reimbMonth(r) === ym);
+
   el.append(h('div', { class: 'grid grid-cards' },
-    statCard('Total a receber', reimbOutstanding(), { tone: reimbOutstanding() > 0 ? 'tone-warn' : 'tone-ok' }),
-    statCard('Pendentes', sum(ativos.filter(r => r.status === 'pendente'), reimbPending)),
+    statCard(`Pendente em ${ymLabel(ym)}`, sum(doMes, reimbPending), { tone: sum(doMes, reimbPending) > 0 ? 'tone-warn' : 'tone-ok' }),
+    statCard('Total a receber (todos os meses)', reimbOutstanding()),
     statCard('Solicitados', sum(ativos.filter(r => r.status === 'solicitado'), reimbPending)),
     statCard('Recebido no total', sum(db.reimbursements, r => r.valorRecebido), { tone: 'tone-ok' })));
 
-  // Resumo por pessoa
+  // Resumo por pessoa, priorizando o mês selecionado (dá pra ver quanto cada um deve NESTE mês).
   const porPessoa = db.people.map(p => {
     const items = ativos.filter(r => r.pessoaId === p.id);
+    const itemsMes = items.filter(r => reimbMonth(r) === ym);
     return {
       pessoa: p,
+      doMes: sum(itemsMes, reimbPending),
+      countMes: itemsMes.length,
       pendente: sum(items.filter(r => ['pendente', 'atrasado'].includes(r.status)), reimbPending),
       solicitado: sum(items.filter(r => r.status === 'solicitado'), reimbPending),
-      parcial: sum(items.filter(r => r.status === 'parcial'), reimbPending),
-      pago: sum(items.filter(r => r.status === 'pago'), r => r.valorRecebido),
-      ultimaSolicitacao: items.map(r => r.dataSolicitacao).filter(Boolean).sort().pop() || '',
       total: sum(items.filter(r => ['pendente', 'solicitado', 'parcial', 'atrasado'].includes(r.status)), reimbPending),
+      ultimaSolicitacao: items.map(r => r.dataSolicitacao).filter(Boolean).sort().pop() || '',
       count: items.length,
     };
   }).filter(x => x.count > 0);
 
   el.append(card(null,
     h('div', { class: 'card-head' },
-      h('h2', { class: 'card-title' }, 'Resumo de reembolsos por pessoa'),
+      h('h2', { class: 'card-title' }, `Quem me deve em ${ymLabel(ym)}`),
       h('div', { style: 'display:flex;gap:8px' },
         h('button', { class: 'btn btn-primary btn-sm', onclick: () => novaDespesaReembolsavel(rerender) }, '+ Despesa reembolsável'),
         h('button', { class: 'btn btn-ghost btn-sm', onclick: () => location.hash = '#/config' }, '👤 Gerenciar pessoas'))),
     table([
       { label: 'Pessoa', render: x => h('a', { href: '#', onclick: e => { e.preventDefault(); pessoaSelecionada = x.pessoa.id; rerender(); } }, h('b', {}, x.pessoa.nome)) },
-      { label: 'Pendente', render: x => fmt(x.pendente), right: true },
-      { label: 'Solicitado', render: x => fmt(x.solicitado), right: true },
-      { label: 'Parcial', render: x => fmt(x.parcial), right: true },
-      { label: 'Total a receber', render: x => h('b', {}, fmt(x.total)), right: true },
+      { label: `Deve em ${ymShort(ym)}`, render: x => h('b', {}, fmt(x.doMes)), right: true },
+      { label: 'Total pendente (todos os meses)', render: x => fmt(x.total), right: true },
       { label: 'Última solicitação', render: x => x.ultimaSolicitacao ? fmtDate(x.ultimaSolicitacao) : '—' },
-      { label: '', render: x => h('button', { class: 'btn btn-secondary btn-sm', onclick: () => messageModal(x.pessoa) }, '💬 Gerar mensagem'), right: true },
-    ], porPessoa, { empty: 'Nenhum reembolso registrado. Marque despesas como reembolsáveis ou cadastre aqui direto.' })));
+      { label: '', render: x => h('button', { class: 'btn btn-secondary btn-sm', onclick: () => messageModal(x.pessoa, ym) }, '💬 Gerar mensagem'), right: true },
+    ], porPessoa, { empty: 'Nenhum reembolso registrado. Marque despesas ou compras do cartão como reembolsáveis, ou cadastre aqui direto.' })));
 
-  el.append(renderLista(ativos, rerender, 'Todos os reembolsos em aberto'));
+  el.append(renderLista(doMes, rerender, `Reembolsos com competência em ${ymLabel(ym)}`,
+    { empty: `Nenhum reembolso com competência em ${ymLabel(ym)}.` }));
+  el.append(renderLista(ativos, rerender, 'Todos os reembolsos em aberto (todos os meses)'));
 }
 
 function renderPessoa(el, rerender) {
   const p = db.people.find(x => x.id === pessoaSelecionada);
   if (!p) { pessoaSelecionada = null; return rerender(); }
+  const ym = ui.month;
   const items = db.reimbursements.filter(r => r.pessoaId === p.id);
   const aberto = sum(items.filter(r => ['pendente', 'solicitado', 'parcial', 'atrasado'].includes(r.status)), reimbPending);
+  const doMes = sum(items.filter(r => reimbMonth(r) === ym), reimbPending);
 
   el.append(h('div', { class: 'topbar' },
     h('button', { class: 'btn btn-ghost btn-sm', onclick: () => { pessoaSelecionada = null; rerender(); } }, '← Voltar'),
-    h('button', { class: 'btn btn-secondary btn-sm', onclick: () => messageModal(p) }, '💬 Gerar mensagem')));
+    h('button', { class: 'btn btn-secondary btn-sm', onclick: () => messageModal(p, ym) }, '💬 Gerar mensagem')));
 
   el.append(h('div', { class: 'grid grid-cards' },
-    statCard(`A receber de ${p.nome}`, aberto, { tone: aberto > 0 ? 'tone-warn' : 'tone-ok' }),
+    statCard(`Deve em ${ymLabel(ym)}`, doMes, { tone: doMes > 0 ? 'tone-warn' : 'tone-ok' }),
+    statCard(`Total pendente (todos os meses)`, aberto, { tone: aberto > 0 ? 'tone-warn' : '' }),
     statCard('Já recebido', sum(items, r => r.valorRecebido), { tone: 'tone-ok' }),
     statCard('Lançamentos', String(items.length))));
 
-  el.append(renderLista(items, rerender, `Histórico de ${p.nome}`));
+  el.append(renderLista(items, rerender, `Histórico de ${p.nome} — mês a mês`));
 }
 
-function renderLista(items, rerender, title) {
+function renderLista(items, rerender, title, opts = {}) {
   const sorted = [...items].sort((a, b) => (b.data || '').localeCompare(a.data || ''));
   return card(title, table([
+    { label: 'Mês', render: r => h(reimbMonth(r) === ui.month ? 'b' : 'span', {}, ymShort(reimbMonth(r))) },
     { label: 'Data', k: 'data', date: true },
     { label: 'Descrição', k: 'descricao' },
     { label: 'Pessoa', render: r => db.people.find(p => p.id === r.pessoaId)?.nome || '—' },
-    { label: 'Despesa total', k: 'valorTotalDespesa', money: true },
+    { label: 'Despesa do mês', k: 'valorTotalDespesa', money: true },
     { label: 'A reembolsar', k: 'valorAReembolsar', money: true },
     { label: 'Recebido', k: 'valorRecebido', money: true },
     { label: 'Pendente', render: r => h(reimbPending(r) > 0 ? 'b' : 'span', {}, fmt(reimbPending(r))), right: true },
     { label: 'Status', render: r => badge(r.status) },
     { label: '', render: r => actions(r, rerender), right: true },
-  ], sorted, { empty: 'Nenhum reembolso.' }));
+  ], sorted, { empty: opts.empty || 'Nenhum reembolso.' }));
 }
 
 function actions(r, rerender) {
@@ -2966,31 +3003,61 @@ function novaDespesaReembolsavel(rerender) {
 }
 
 // ---- Mensagem para WhatsApp ----
-function messageModal(pessoa) {
-  const items = db.reimbursements
+// Por padrão gera a cobrança do MÊS selecionado no app (o cenário mais comum: "quanto
+// você me deve em julho?"); um toggle permite trocar para todos os meses pendentes.
+function messageModal(pessoa, ymPadrao) {
+  const pendentes = db.reimbursements
     .filter(r => r.pessoaId === pessoa.id && ['pendente', 'solicitado', 'parcial', 'atrasado'].includes(r.status) && reimbPending(r) > 0)
-    .sort((a, b) => (a.data || '').localeCompare(b.data || ''));
-  const total = sum(items, reimbPending);
+    .sort((a, b) => (reimbMonth(a) || '').localeCompare(reimbMonth(b) || '') || (a.data || '').localeCompare(b.data || ''));
 
-  const resumida = `Oi! Fechando aqui os valores pendentes, ficou ${fmt(total)} para me reembolsar.`;
-  const detalhada = `${resumida}\n\nDetalhamento:\n${items.map(r => `${fmtDate(r.data)}, ${r.descricao}: ${fmt(reimbPending(r))}`).join('\n')}\n\nTotal: ${fmt(total)}.`;
+  const montar = escopo => {
+    const items = escopo === 'mes' ? pendentes.filter(r => reimbMonth(r) === ymPadrao) : pendentes;
+    const total = sum(items, reimbPending);
+    const rotuloMes = escopo === 'mes' ? ` de ${ymLabel(ymPadrao)}` : '';
+    const resumida = total > 0
+      ? `Oi! Fechando aqui os valores pendentes${rotuloMes}, ficou ${fmt(total)} para me reembolsar.`
+      : `Oi! Não há pendências${rotuloMes} no momento. 🎉`;
+    const detalhada = items.length
+      ? `${resumida}\n\nDetalhamento:\n${items.map(r => `${fmtDate(r.data)}, ${r.descricao}: ${fmt(reimbPending(r))}`).join('\n')}\n\nTotal: ${fmt(total)}.`
+      : resumida;
+    return { items, total, resumida, detalhada };
+  };
 
-  const ta = h('textarea', { rows: 10, style: 'width:100%;font-size:13px' }, resumida);
+  let escopo = 'mes';
   let modo = 'resumida';
-  const setModo = m => { modo = m; ta.value = m === 'resumida' ? resumida : detalhada; btnR.className = `btn btn-sm ${m === 'resumida' ? 'btn-primary' : 'btn-ghost'}`; btnD.className = `btn btn-sm ${m === 'detalhada' ? 'btn-primary' : 'btn-ghost'}`; };
-  const btnR = h('button', { class: 'btn btn-sm btn-primary', onclick: () => setModo('resumida') }, 'Resumida');
-  const btnD = h('button', { class: 'btn btn-sm btn-ghost', onclick: () => setModo('detalhada') }, 'Detalhada');
+  const atual = () => montar(escopo);
+
+  const ta = h('textarea', { rows: 10, style: 'width:100%;font-size:13px' }, atual().resumida);
+  const linkZap = pessoa.contato ? h('a', {
+    class: 'btn btn-secondary', target: '_blank', rel: 'noopener',
+    href: `https://wa.me/${String(pessoa.contato).replace(/\D/g, '')}?text=${encodeURIComponent(ta.value)}`,
+  }, '📱 Abrir no WhatsApp') : null;
+  const refresh = () => {
+    const { resumida, detalhada } = atual();
+    ta.value = modo === 'resumida' ? resumida : detalhada;
+    if (linkZap) linkZap.href = `https://wa.me/${String(pessoa.contato).replace(/\D/g, '')}?text=${encodeURIComponent(ta.value)}`;
+  };
+
+  const btnMes = h('button', { class: 'btn btn-sm btn-primary', onclick: () => { escopo = 'mes'; refresh(); syncEscopo(); } }, `Este mês (${ymShort(ymPadrao)})`);
+  const btnTudo = h('button', { class: 'btn btn-sm btn-ghost', onclick: () => { escopo = 'tudo'; refresh(); syncEscopo(); } }, 'Tudo pendente');
+  const syncEscopo = () => {
+    btnMes.className = `btn btn-sm ${escopo === 'mes' ? 'btn-primary' : 'btn-ghost'}`;
+    btnTudo.className = `btn btn-sm ${escopo === 'tudo' ? 'btn-primary' : 'btn-ghost'}`;
+  };
+
+  const btnR = h('button', { class: 'btn btn-sm btn-primary', onclick: () => { modo = 'resumida'; refresh(); syncModo(); } }, 'Resumida');
+  const btnD = h('button', { class: 'btn btn-sm btn-ghost', onclick: () => { modo = 'detalhada'; refresh(); syncModo(); } }, 'Detalhada');
+  const syncModo = () => {
+    btnR.className = `btn btn-sm ${modo === 'resumida' ? 'btn-primary' : 'btn-ghost'}`;
+    btnD.className = `btn btn-sm ${modo === 'detalhada' ? 'btn-primary' : 'btn-ghost'}`;
+  };
 
   const overlay = modal(`Mensagem para ${pessoa.nome}`, h('div', {},
-    total <= 0 ? h('p', { class: 'stat-sub' }, 'Não há valores pendentes para esta pessoa. 🎉') : null,
+    h('div', { style: 'display:flex;gap:8px;margin-bottom:6px' }, btnMes, btnTudo),
     h('div', { style: 'display:flex;gap:8px;margin-bottom:10px' }, btnR, btnD),
     ta,
     h('div', { class: 'modal-actions' },
-      pessoa.contato ? h('a', {
-        class: 'btn btn-secondary',
-        href: `https://wa.me/${String(pessoa.contato).replace(/\D/g, '')}?text=${encodeURIComponent(ta.value)}`,
-        target: '_blank', rel: 'noopener',
-      }, '📱 Abrir no WhatsApp') : null,
+      linkZap,
       h('button', { class: 'btn btn-primary', onclick: () => {
         navigator.clipboard.writeText(ta.value).then(() => toast('Mensagem copiada.'));
       } }, '📋 Copiar mensagem'))));
@@ -3316,7 +3383,7 @@ __m['relatorios'] = (() => {
 // Relatórios com filtros e exportação CSV.
 const { h, fmt, ymShort, ymOf, sum, toCSV, downloadFile } = __m['utils'];
 const { db, ui, STATUS_DESPESA, CLASSIFICACAO_DESPESA } = __m['store'];
-const { annualRows, expenseNet, installmentNet, recurringOccurrences, monthInstallments, reimbPending, provisionMonthly } = __m['calc'];
+const { annualRows, expenseNet, installmentNet, recurringOccurrences, monthInstallments, reimbPending, reimbMonth, provisionMonthly } = __m['calc'];
 const { card, table, badge, statCard } = __m['ui'];
 const { donut } = __m['charts'];
 
@@ -3453,13 +3520,13 @@ function reembolsos(el) {
   let list = db.reimbursements;
   if (f.pessoa) list = list.filter(r => r.pessoaId === f.pessoa);
   const rows = list.map(r => ({
-    data: r.data, pessoa: db.people.find(p => p.id === r.pessoaId)?.nome || '', descricao: r.descricao,
+    mes: reimbMonth(r) ? ymShort(reimbMonth(r)) : '', data: r.data, pessoa: db.people.find(p => p.id === r.pessoaId)?.nome || '', descricao: r.descricao,
     valor_total: Number(r.valorTotalDespesa || 0).toFixed(2), a_reembolsar: Number(r.valorAReembolsar).toFixed(2),
     recebido: Number(r.valorRecebido || 0).toFixed(2), pendente: reimbPending(r).toFixed(2), status: r.status,
   }));
-  el.append(card(null, head('Reembolsos por pessoa', rows, ['data', 'pessoa', 'descricao', 'valor_total', 'a_reembolsar', 'recebido', 'pendente', 'status'], 'reembolsos'),
+  el.append(card(null, head('Reembolsos por pessoa', rows, ['mes', 'data', 'pessoa', 'descricao', 'valor_total', 'a_reembolsar', 'recebido', 'pendente', 'status'], 'reembolsos'),
     table([
-      { label: 'Data', k: 'data', date: true }, { label: 'Pessoa', k: 'pessoa' }, { label: 'Descrição', k: 'descricao' },
+      { label: 'Mês', k: 'mes' }, { label: 'Data', k: 'data', date: true }, { label: 'Pessoa', k: 'pessoa' }, { label: 'Descrição', k: 'descricao' },
       { label: 'A reembolsar', k: 'a_reembolsar', money: true }, { label: 'Recebido', k: 'recebido', money: true },
       { label: 'Pendente', k: 'pendente', money: true }, { label: 'Status', render: r => badge(r.status) },
     ], rows)));
@@ -3940,7 +4007,7 @@ const ROUTES = [
   { path: 'recorrentes', label: 'Contas recorrentes', icon: '🔁', view: recorrentes, month: true },
   { path: 'provisoes', label: 'Provisões', icon: '🏦', view: provisoes, month: true },
   { path: 'investimentos', label: 'Investimentos', icon: '📈', view: investimentos, month: true },
-  { path: 'reembolsos', label: 'Reembolsos', icon: '🤝', view: reembolsos },
+  { path: 'reembolsos', label: 'Reembolsos', icon: '🤝', view: reembolsos, month: true },
   { path: 'simulador', label: 'Simulador de compra', icon: '🧮', view: simulador },
   { path: 'carro', label: 'Carro', icon: '🚗', view: carro, month: true },
   { path: 'fechamento', label: 'Fechamento mensal', icon: '✅', view: fechamento, month: true },

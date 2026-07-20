@@ -30,7 +30,7 @@ const ROUTES = [
   { path: 'recorrentes', label: 'Contas recorrentes', icon: '🔁', view: recorrentes, month: true },
   { path: 'provisoes', label: 'Provisões', icon: '🏦', view: provisoes, month: true },
   { path: 'investimentos', label: 'Investimentos', icon: '📈', view: investimentos, month: true },
-  { path: 'reembolsos', label: 'Reembolsos', icon: '🤝', view: reembolsos },
+  { path: 'reembolsos', label: 'Reembolsos', icon: '🤝', view: reembolsos, month: true },
   { path: 'simulador', label: 'Simulador de compra', icon: '🧮', view: simulador },
   { path: 'carro', label: 'Carro', icon: '🚗', view: carro, month: true },
   { path: 'fechamento', label: 'Fechamento mensal', icon: '✅', view: fechamento, month: true },

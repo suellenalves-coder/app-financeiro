@@ -1,7 +1,7 @@
 // Relatórios com filtros e exportação CSV.
 import { h, fmt, ymShort, ymOf, sum, toCSV, downloadFile } from '../utils.js';
 import { db, ui, STATUS_DESPESA, CLASSIFICACAO_DESPESA } from '../store.js';
-import { annualRows, expenseNet, installmentNet, recurringOccurrences, monthInstallments, reimbPending, provisionMonthly } from '../calc.js';
+import { annualRows, expenseNet, installmentNet, recurringOccurrences, monthInstallments, reimbPending, reimbMonth, provisionMonthly } from '../calc.js';
 import { card, table, badge, statCard } from '../ui.js';
 import { donut } from '../charts.js';
 
@@ -138,13 +138,13 @@ function reembolsos(el) {
   let list = db.reimbursements;
   if (f.pessoa) list = list.filter(r => r.pessoaId === f.pessoa);
   const rows = list.map(r => ({
-    data: r.data, pessoa: db.people.find(p => p.id === r.pessoaId)?.nome || '', descricao: r.descricao,
+    mes: reimbMonth(r) ? ymShort(reimbMonth(r)) : '', data: r.data, pessoa: db.people.find(p => p.id === r.pessoaId)?.nome || '', descricao: r.descricao,
     valor_total: Number(r.valorTotalDespesa || 0).toFixed(2), a_reembolsar: Number(r.valorAReembolsar).toFixed(2),
     recebido: Number(r.valorRecebido || 0).toFixed(2), pendente: reimbPending(r).toFixed(2), status: r.status,
   }));
-  el.append(card(null, head('Reembolsos por pessoa', rows, ['data', 'pessoa', 'descricao', 'valor_total', 'a_reembolsar', 'recebido', 'pendente', 'status'], 'reembolsos'),
+  el.append(card(null, head('Reembolsos por pessoa', rows, ['mes', 'data', 'pessoa', 'descricao', 'valor_total', 'a_reembolsar', 'recebido', 'pendente', 'status'], 'reembolsos'),
     table([
-      { label: 'Data', k: 'data', date: true }, { label: 'Pessoa', k: 'pessoa' }, { label: 'Descrição', k: 'descricao' },
+      { label: 'Mês', k: 'mes' }, { label: 'Data', k: 'data', date: true }, { label: 'Pessoa', k: 'pessoa' }, { label: 'Descrição', k: 'descricao' },
       { label: 'A reembolsar', k: 'a_reembolsar', money: true }, { label: 'Recebido', k: 'recebido', money: true },
       { label: 'Pendente', k: 'pendente', money: true }, { label: 'Status', render: r => badge(r.status) },
     ], rows)));

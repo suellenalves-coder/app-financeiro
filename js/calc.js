@@ -137,6 +137,12 @@ export function reimbPending(r) {
   return Math.max(0, (Number(r.valorAReembolsar) || 0) - (Number(r.valorRecebido) || 0));
 }
 
+// Mês de competência do reembolso: explícito (parcelas de cartão, uma por mês)
+// ou derivado da data (reembolsos avulsos/de despesa, que valem só naquele mês).
+export function reimbMonth(r) {
+  return r.mes || ymOf(r.data);
+}
+
 export function reimbOutstanding() {
   return sum(db.reimbursements.filter(r => ['pendente', 'solicitado', 'parcial', 'atrasado'].includes(r.status)), reimbPending);
 }
