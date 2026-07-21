@@ -33,6 +33,8 @@ export function hideTip() {
 function svg(w, hh, cls = '') {
   const el = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   el.setAttribute('viewBox', `0 0 ${w} ${hh}`);
+  el.setAttribute('width', w);
+  el.setAttribute('height', hh);
   el.setAttribute('class', `chart ${cls}`);
   el.setAttribute('role', 'img');
   return el;
