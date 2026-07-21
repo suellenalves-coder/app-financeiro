@@ -1458,22 +1458,31 @@ function donut(data, { size = 180, maxSlices = 5 } = {}) {
   const total = items.reduce((a, [, v]) => a + v, 0);
   const r = size / 2 - 6, cx = size / 2, cy = size / 2, thick = 26;
   const el = svg(size, size, 'donut');
-  let angle = -Math.PI / 2;
   const colored = items.map(([label, v], i) => [label, v, label === 'Outros' ? CHART_MUTED : CHART_COLORS[i % CHART_COLORS.length]]);
-  for (const [label, v, color] of colored) {
-    const frac = v / total;
-    const a2 = angle + frac * Math.PI * 2 - 0.03; // 0.03 rad ≈ espaçador de 2px
-    const large = frac > 0.5 ? 1 : 0;
-    const p1 = [cx + r * Math.cos(angle), cy + r * Math.sin(angle)];
-    const p2 = [cx + r * Math.cos(a2), cy + r * Math.sin(a2)];
-    const path = s('path', {
-      d: `M ${p1[0]} ${p1[1]} A ${r} ${r} 0 ${large} 1 ${p2[0]} ${p2[1]}`,
-      fill: 'none', stroke: color, 'stroke-width': thick, 'stroke-linecap': 'butt',
-    });
-    path.addEventListener('mousemove', e => showTip(e, `<b>${label}</b><br>${fmt(v)} · ${(frac * 100).toFixed(0)}%`));
-    path.addEventListener('mouseleave', hideTip);
-    el.append(path);
-    angle = a2 + 0.03;
+  if (colored.length === 1) {
+    // Categoria única (100%): anel fechado, sem espaçador — não há fatia vizinha para separar.
+    const [label, v, color] = colored[0];
+    const ring = s('circle', { cx, cy, r, fill: 'none', stroke: color, 'stroke-width': thick });
+    ring.addEventListener('mousemove', e => showTip(e, `<b>${label}</b><br>${fmt(v)} · 100%`));
+    ring.addEventListener('mouseleave', hideTip);
+    el.append(ring);
+  } else {
+    let angle = -Math.PI / 2;
+    for (const [label, v, color] of colored) {
+      const frac = v / total;
+      const a2 = angle + frac * Math.PI * 2 - 0.03; // 0.03 rad ≈ espaçador de 2px
+      const large = frac > 0.5 ? 1 : 0;
+      const p1 = [cx + r * Math.cos(angle), cy + r * Math.sin(angle)];
+      const p2 = [cx + r * Math.cos(a2), cy + r * Math.sin(a2)];
+      const path = s('path', {
+        d: `M ${p1[0]} ${p1[1]} A ${r} ${r} 0 ${large} 1 ${p2[0]} ${p2[1]}`,
+        fill: 'none', stroke: color, 'stroke-width': thick, 'stroke-linecap': 'butt',
+      });
+      path.addEventListener('mousemove', e => showTip(e, `<b>${label}</b><br>${fmt(v)} · ${(frac * 100).toFixed(0)}%`));
+      path.addEventListener('mouseleave', hideTip);
+      el.append(path);
+      angle = a2 + 0.03;
+    }
   }
   const center = s('text', { x: cx, y: cy - 4, 'text-anchor': 'middle', fill: INK, 'font-size': 15, 'font-weight': 600 });
   center.textContent = fmt(total);
