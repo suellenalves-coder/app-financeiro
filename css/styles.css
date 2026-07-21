@@ -20,7 +20,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
+html, body { margin: 0; padding: 0; overflow-x: hidden; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
   background: var(--off-white);
@@ -48,7 +48,7 @@ input, select, textarea { font: inherit; color: var(--ink); }
 .nav-link.active { background: var(--menta); color: var(--ink); font-weight: 600; }
 .nav-icon { width: 20px; text-align: center; }
 
-.main { flex: 1; margin-left: var(--sidebar-w); padding: 20px 24px 90px; max-width: 1200px; }
+.main { flex: 1; min-width: 0; margin-left: var(--sidebar-w); padding: 20px 24px 90px; max-width: 1200px; }
 
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
 .topbar h1 { font-size: 21px; }
@@ -65,6 +65,7 @@ input, select, textarea { font: inherit; color: var(--ink); }
 .card {
   background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
   padding: 18px; margin-bottom: 16px; border: 1px solid rgba(231, 226, 214, .6);
+  min-width: 0; max-width: 100%;
 }
 .card-title { font-size: 15px; margin-bottom: 12px; color: var(--ink); }
 .card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -72,7 +73,7 @@ input, select, textarea { font: inherit; color: var(--ink); }
 
 .grid { display: grid; gap: 12px; }
 .grid-cards { grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); margin-bottom: 16px; }
-.grid-2 { grid-template-columns: 1fr 1fr; }
+.grid-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 @media (max-width: 860px) { .grid-2 { grid-template-columns: 1fr; } }
 
 .stat-card {
@@ -179,9 +180,9 @@ input, select, textarea { font: inherit; color: var(--ink); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 
 /* ---- Gráficos ---- */
-.chart-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.chart-scroll { overflow-x: auto; width: 100%; }
-.chart { max-width: 100%; height: auto; }
+.chart-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; max-width: 100%; }
+.chart-scroll { overflow-x: auto; width: 100%; min-width: 0; }
+.chart { display: block; max-width: 100%; height: auto; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; justify-content: center; font-size: 12px; color: var(--ink-2); }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }
 .legend-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
