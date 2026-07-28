@@ -81,17 +81,19 @@ export function futureInstallmentsTotal(fromYm) {
   return sum(db.installments.filter(p => ymDiff(p.mes, fromYm) > 0 && ATIVAS(p.status)), p => p.valor);
 }
 
-// Fatura de um cartão no mês.
+// Fatura de um cartão no mês: parcelas de compras parceladas + despesas avulsas pagas
+// no cartão (ex.: abastecimentos), para não precisar olhar em dois lugares.
 export function cardInvoice(cardId, ym) {
   const parcelas = monthInstallments(ym).filter(p => p.cartaoId === cardId);
+  const despesas = monthExpenses(ym).filter(e => e.cartaoId === cardId && e.formaPagamento === 'Cartão de crédito');
   const novas = parcelas.filter(p => Number(p.numero) === Number(p.parcelaInicial ?? 1) &&
     db.purchases.find(c => c.id === p.purchaseId)?.mesInicio === ym);
   const herdadas = parcelas.filter(p => !novas.includes(p));
   return {
-    parcelas,
-    total: sum(parcelas, p => p.valor),
-    pago: sum(parcelas.filter(p => p.status === 'pago'), p => p.valor),
-    novas: sum(novas, p => p.valor),
+    parcelas, despesas,
+    total: sum(parcelas, p => p.valor) + sum(despesas, e => e.valorTotal),
+    pago: sum(parcelas.filter(p => p.status === 'pago'), p => p.valor) + sum(despesas.filter(e => e.status === 'pago'), e => e.valorTotal),
+    novas: sum(novas, p => p.valor) + sum(despesas, e => e.valorTotal),
     herdadas: sum(herdadas, p => p.valor),
   };
 }
@@ -332,4 +334,39 @@ export function simulatePurchase({ valorTotal, numParcelas, mesInicio, cartaoId 
     });
   }
   return { valorParcela, meses };
+}
+
+// ---- Abastecimentos (método tanque cheio-a-cheio) ----
+// Cada abastecimento a partir do segundo forma um "trecho" com o anterior: a distância
+// rodada (diferença de km) e os litros daquele abastecimento cobrem esse trecho. O primeiro
+// abastecimento só estabelece a base (sem trecho anterior para comparar).
+function refuelingSegments() {
+  const sorted = [...db.refuelings]
+    .filter(r => Number(r.kmRegistrado) > 0 && Number(r.litros) > 0)
+    .sort((a, b) => (Number(a.kmRegistrado) - Number(b.kmRegistrado)) || (a.data || '').localeCompare(b.data || ''));
+  const out = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1], cur = sorted[i];
+    const km = Number(cur.kmRegistrado) - Number(prev.kmRegistrado);
+    const litros = Number(cur.litros) || 0;
+    if (km <= 0) continue; // km não avançou (registro incorreto) — ignora o trecho
+    out.push({ data: cur.data, km, litros, valor: Number(cur.valorTotal) || 0 });
+  }
+  return out;
+}
+
+// Indicadores de combustível para um conjunto de meses (ym[]): valor gasto (todos os
+// abastecimentos com data no período), consumo médio e custo por km (trechos que terminam
+// no período, método cheio-a-cheio).
+export function carFuelStats(meses) {
+  const set = new Set(meses);
+  const valorGasto = sum(db.refuelings.filter(r => set.has(ymOf(r.data))), r => Number(r.valorTotal) || 0);
+  const segs = refuelingSegments().filter(s => set.has(ymOf(s.data)));
+  const km = sum(segs, s => s.km);
+  const litros = sum(segs, s => s.litros);
+  return {
+    valorGasto, km,
+    consumoMedio: litros > 0 ? km / litros : null,
+    custoPorKm: km > 0 ? valorGasto / km : null,
+  };
 }

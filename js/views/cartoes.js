@@ -191,25 +191,44 @@ export function render(el, rerender) {
       c.limitePlanejado > 0 ? h('div', {},
         h('div', { class: 'commit-meter' }, h('div', { style: `width:${Math.min(100, pct)}%;background:${meterColor}` })),
         h('div', { class: 'stat-sub' }, `Sua fatura já atingiu ${pct.toFixed(0)}% do limite planejado para este mês.`)) : null,
-      inv.parcelas.length ? h('div', { style: 'margin:10px 0' },
-        h('button', {
-          class: 'btn btn-sm ' + (inv.parcelas.every(p => p.status === 'pago') ? 'btn-ghost' : 'btn-primary'),
-          onclick: () => {
-            const todasPagas = inv.parcelas.every(p => p.status === 'pago');
-            for (const p of inv.parcelas) update('installments', p.id, { status: todasPagas ? 'previsto' : 'pago' });
-            toast(todasPagas ? 'Pagamento da fatura desfeito.' : 'Fatura inteira marcada como paga.');
-            rerender();
-          },
-        }, inv.parcelas.every(p => p.status === 'pago') ? '↩︎ Desfazer pagamento da fatura' : '✔️ Marcar fatura inteira como paga')) : null,
-      inv.parcelas.length ? table([
-        { label: 'Descrição', render: p => db.purchases.find(x => x.id === p.purchaseId)?.descricao || '—' },
-        { label: 'Categoria', render: p => db.purchases.find(x => x.id === p.purchaseId)?.categoria || '—' },
-        { label: 'Parcela', render: p => `${p.numero}/${p.total}` },
-        { label: 'Valor', k: 'valor', money: true },
-        { label: 'Status', render: p => badge(p.status) },
-        { label: '', render: p => rowActions(
-            [p.status === 'pago' ? '↩︎' : '✔️', () => { update('installments', p.id, { status: p.status === 'pago' ? 'previsto' : 'pago' }); rerender(); }, p.status === 'pago' ? 'Desfazer pagamento' : 'Marcar como paga']), right: true },
-      ], inv.parcelas) : h('div', { class: 'empty-state' }, 'Nenhuma parcela neste mês.')));
+      (() => {
+        // Linhas da fatura: parcelas de compras parceladas + despesas avulsas pagas neste
+        // cartão (ex.: abastecimentos) — tudo num só lugar, cada uma com sua ação de pagar.
+        const linhas = [
+          ...inv.parcelas.map(p => ({
+            descricao: db.purchases.find(x => x.id === p.purchaseId)?.descricao || '—',
+            categoria: db.purchases.find(x => x.id === p.purchaseId)?.categoria || '—',
+            parcela: `${p.numero}/${p.total}`, valor: p.valor, status: p.status,
+            setStatus: novo => update('installments', p.id, { status: novo }),
+          })),
+          ...inv.despesas.map(e => ({
+            descricao: e.descricao, categoria: e.categoria || '—', parcela: '—',
+            valor: e.valorTotal, status: e.status,
+            setStatus: novo => update('expenses', e.id, { status: novo }),
+          })),
+        ];
+        const todasPagas = linhas.length > 0 && linhas.every(l => l.status === 'pago');
+        return h('div', {},
+          linhas.length ? h('div', { style: 'margin:10px 0' },
+            h('button', {
+              class: 'btn btn-sm ' + (todasPagas ? 'btn-ghost' : 'btn-primary'),
+              onclick: () => {
+                const alvo = todasPagas ? 'previsto' : 'pago';
+                for (const l of linhas) l.setStatus(alvo);
+                toast(todasPagas ? 'Pagamento da fatura desfeito.' : 'Fatura inteira marcada como paga.');
+                rerender();
+              },
+            }, todasPagas ? '↩︎ Desfazer pagamento da fatura' : '✔️ Marcar fatura inteira como paga')) : null,
+          linhas.length ? table([
+            { label: 'Descrição', k: 'descricao' },
+            { label: 'Categoria', k: 'categoria' },
+            { label: 'Parcela', k: 'parcela' },
+            { label: 'Valor', k: 'valor', money: true },
+            { label: 'Status', render: l => badge(l.status) },
+            { label: '', render: l => rowActions(
+                [l.status === 'pago' ? '↩︎' : '✔️', () => { l.setStatus(l.status === 'pago' ? 'previsto' : 'pago'); rerender(); }, l.status === 'pago' ? 'Desfazer pagamento' : 'Marcar como paga']), right: true },
+          ], linhas) : h('div', { class: 'empty-state' }, 'Nenhuma parcela ou despesa neste mês.'));
+      })()));
   }
 
   // ---- Ações principais ----

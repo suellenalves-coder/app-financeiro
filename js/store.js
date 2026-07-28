@@ -95,6 +95,7 @@ function defaults() {
     investments: [],
     investContrib: [],  // { id, investimentoId, data, valor }
     reimbursements: [],
+    refuelings: [], // abastecimentos: { id, data, kmRegistrado, precoLitro, litros, valorTotal, formaPagamento, cartaoId, banco, expenseId, obs }
     rules: [
       { id: uid(), contem: 'posto', acao: 'categoria', valor: 'Combustível' },
       { id: uid(), contem: 'ifood', acao: 'categoria', valor: 'Alimentação fora de casa' },

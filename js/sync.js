@@ -264,7 +264,7 @@ const COLLECTIONS = [
   'banks', 'categoriesExpense', 'categoriesIncome', 'people', 'cards',
   'incomes', 'expenses', 'purchases', 'installments', 'recurring',
   'provisions', 'provisionDeposits', 'investments', 'investContrib',
-  'reimbursements', 'rules',
+  'reimbursements', 'rules', 'refuelings',
 ];
 
 function mergeById(a, b, deleted, bWinsTies) {
