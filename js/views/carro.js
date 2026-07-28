@@ -11,14 +11,17 @@ function isCarro(categoria) {
   return CATEGORIAS_CARRO.includes(categoria);
 }
 
-// Todas as despesas do carro em um mês (avulsas + recorrentes + parcelas).
-// Despesas geradas por um abastecimento não entram aqui — já aparecem, com mais detalhe
-// (km, litros, preço/L), na tabela dedicada de Abastecimentos.
+// Todas as despesas do carro em um mês (avulsas + recorrentes + parcelas), incluindo os
+// abastecimentos — eles também precisam entrar no total, nos gráficos e nos lançamentos.
 function carItems(ym) {
   const out = [];
-  const idsDeAbastecimento = new Set(db.refuelings.map(r => r.expenseId).filter(Boolean));
-  for (const e of monthExpenses(ym).filter(e => isCarro(e.categoria) && !idsDeAbastecimento.has(e.id))) {
-    out.push({ data: e.dataVencimento || e.dataCompra, descricao: e.descricao, sub: e.subcategoria || e.categoria, valor: expenseNet(e), status: e.status });
+  const refuelingByExpenseId = new Map(db.refuelings.filter(r => r.expenseId).map(r => [r.expenseId, r]));
+  for (const e of monthExpenses(ym).filter(e => isCarro(e.categoria))) {
+    const abastecimento = refuelingByExpenseId.get(e.id);
+    const descricao = abastecimento
+      ? `Abastecimento — ${Number(abastecimento.litros).toFixed(2)}L a ${fmt(abastecimento.precoLitro)}/L (${Number(abastecimento.kmRegistrado).toLocaleString('pt-BR')} km)`
+      : e.descricao;
+    out.push({ data: e.dataVencimento || e.dataCompra, descricao, sub: e.subcategoria || e.categoria, valor: expenseNet(e), status: e.status });
   }
   for (const o of recurringOccurrences(ym).filter(o => isCarro(o.categoria))) {
     out.push({ data: o.dataVencimento, descricao: o.nome, sub: o.categoria, valor: o.valor, status: o.status });
