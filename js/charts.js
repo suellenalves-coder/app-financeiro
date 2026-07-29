@@ -61,7 +61,10 @@ export function donut(data, { size = 180, maxSlices = 5 } = {}) {
     items = top;
   }
   const total = items.reduce((a, [, v]) => a + v, 0);
-  const r = size / 2 - 6, cx = size / 2, cy = size / 2, thick = 26;
+  const thick = 26;
+  // O raio precisa deixar a espessura do traço inteira dentro do viewBox (r + thick/2 <= size/2),
+  // senão a rosca é cortada pela própria borda do SVG — não é um problema de CSS do card.
+  const r = size / 2 - thick / 2 - 3, cx = size / 2, cy = size / 2;
   const el = svg(size, size, 'donut');
   const colored = items.map(([label, v], i) => [label, v, label === 'Outros' ? CHART_MUTED : CHART_COLORS[i % CHART_COLORS.length]]);
   if (colored.length === 1) {
