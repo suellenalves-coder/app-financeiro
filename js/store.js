@@ -12,12 +12,13 @@ export const CATEGORIAS_DESPESA = [
 
 export const CATEGORIAS_RECEITA = [
   'Salário fixo', 'Renda variável', 'Aula ou docência', 'Projeto pontual',
-  'Reembolso', 'Restituição', 'Rendimento de investimento', 'Outros',
+  'Reembolso', 'Restituição', 'Rendimento de investimento', 'Movimentação patrimonial', 'Outros',
 ];
 
 export const TIPOS_RECEITA = [
   ['segura', 'Receita segura'], ['variavel', 'Receita variável'],
   ['extraordinaria', 'Receita extraordinária'], ['reembolso', 'Reembolso'],
+  ['resgate_investimento', 'Resgate de Investimento'],
 ];
 
 export const STATUS_RECEITA = [
@@ -94,6 +95,7 @@ function defaults() {
     provisionDeposits: [], // { id, provisaoId, mes, valor }
     investments: [],
     investContrib: [],  // { id, investimentoId, data, valor }
+    investRedemptions: [], // resgates: { id, investimentoId, data, valor, saldoAnterior, saldoAtualizado, bancoOrigem, produtoOrigem, contaDestino, obs, incomeId }
     reimbursements: [],
     refuelings: [], // abastecimentos: { id, data, kmRegistrado, precoLitro, litros, valorTotal, formaPagamento, cartaoId, banco, expenseId, obs }
     rules: [
@@ -108,12 +110,22 @@ function defaults() {
 
 export let db = load();
 
+// Garante que categorias adicionadas em versões novas do app existam mesmo em bases
+// salvas antes delas (o merge de load()/replaceDb() substitui a lista inteira).
+function ensureDefaultCategories(data) {
+  if (!data.categoriesIncome.some(c => c.nome === 'Movimentação patrimonial')) {
+    data.categoriesIncome.push({ id: uid(), nome: 'Movimentação patrimonial' });
+  }
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const data = JSON.parse(raw);
-      return Object.assign(defaults(), data, { settings: Object.assign(defaults().settings, data.settings) });
+      const merged = Object.assign(defaults(), data, { settings: Object.assign(defaults().settings, data.settings) });
+      ensureDefaultCategories(merged);
+      return merged;
     }
   } catch (e) { console.error('Falha ao carregar dados', e); }
   return defaults();
@@ -133,6 +145,7 @@ export function save() {
 // Muta o objeto db existente para manter as referências dos demais módulos.
 export function replaceDb(data) {
   const novo = Object.assign(defaults(), data, { settings: Object.assign(defaults().settings, data.settings) });
+  ensureDefaultCategories(novo);
   for (const k of Object.keys(db)) delete db[k];
   Object.assign(db, novo);
   localStorage.setItem(KEY, JSON.stringify(db));

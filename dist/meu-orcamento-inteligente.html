@@ -479,12 +479,13 @@ const CATEGORIAS_DESPESA = [
 
 const CATEGORIAS_RECEITA = [
   'Salário fixo', 'Renda variável', 'Aula ou docência', 'Projeto pontual',
-  'Reembolso', 'Restituição', 'Rendimento de investimento', 'Outros',
+  'Reembolso', 'Restituição', 'Rendimento de investimento', 'Movimentação patrimonial', 'Outros',
 ];
 
 const TIPOS_RECEITA = [
   ['segura', 'Receita segura'], ['variavel', 'Receita variável'],
   ['extraordinaria', 'Receita extraordinária'], ['reembolso', 'Reembolso'],
+  ['resgate_investimento', 'Resgate de Investimento'],
 ];
 
 const STATUS_RECEITA = [
@@ -561,6 +562,7 @@ function defaults() {
     provisionDeposits: [], // { id, provisaoId, mes, valor }
     investments: [],
     investContrib: [],  // { id, investimentoId, data, valor }
+    investRedemptions: [], // resgates: { id, investimentoId, data, valor, saldoAnterior, saldoAtualizado, bancoOrigem, produtoOrigem, contaDestino, obs, incomeId }
     reimbursements: [],
     refuelings: [], // abastecimentos: { id, data, kmRegistrado, precoLitro, litros, valorTotal, formaPagamento, cartaoId, banco, expenseId, obs }
     rules: [
@@ -575,12 +577,22 @@ function defaults() {
 
 let db = load();
 
+// Garante que categorias adicionadas em versões novas do app existam mesmo em bases
+// salvas antes delas (o merge de load()/replaceDb() substitui a lista inteira).
+function ensureDefaultCategories(data) {
+  if (!data.categoriesIncome.some(c => c.nome === 'Movimentação patrimonial')) {
+    data.categoriesIncome.push({ id: uid(), nome: 'Movimentação patrimonial' });
+  }
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const data = JSON.parse(raw);
-      return Object.assign(defaults(), data, { settings: Object.assign(defaults().settings, data.settings) });
+      const merged = Object.assign(defaults(), data, { settings: Object.assign(defaults().settings, data.settings) });
+      ensureDefaultCategories(merged);
+      return merged;
     }
   } catch (e) { console.error('Falha ao carregar dados', e); }
   return defaults();
@@ -600,6 +612,7 @@ function save() {
 // Muta o objeto db existente para manter as referências dos demais módulos.
 function replaceDb(data) {
   const novo = Object.assign(defaults(), data, { settings: Object.assign(defaults().settings, data.settings) });
+  ensureDefaultCategories(novo);
   for (const k of Object.keys(db)) delete db[k];
   Object.assign(db, novo);
   localStorage.setItem(KEY, JSON.stringify(db));
@@ -930,7 +943,7 @@ async function pushNow() {
 const COLLECTIONS = [
   'banks', 'categoriesExpense', 'categoriesIncome', 'people', 'cards',
   'incomes', 'expenses', 'purchases', 'installments', 'recurring',
-  'provisions', 'provisionDeposits', 'investments', 'investContrib',
+  'provisions', 'provisionDeposits', 'investments', 'investContrib', 'investRedemptions',
   'reimbursements', 'rules', 'refuelings',
 ];
 
@@ -1191,6 +1204,10 @@ function reserveTotal() {
   return sum(db.investments.filter(i => i.tipo === 'Reserva de emergência' || i.objetivo === 'Reserva de emergência'), i => i.valorAtual);
 }
 
+function monthInvestRedemptions(ym) {
+  return db.investRedemptions.filter(r => ymOf(r.data) === ym);
+}
+
 // ---- Reembolsos ----
 function reimbPending(r) {
   return Math.max(0, (Number(r.valorAReembolsar) || 0) - (Number(r.valorRecebido) || 0));
@@ -1428,7 +1445,7 @@ function carFuelStats(meses) {
   };
 }
 
-return { monthIncomes, monthExpenses, expenseNet, recurringOccurrences, monthInstallments, installmentNet, futureInstallmentsTotal, cardInvoice, provisionMonthly, monthProvisions, monthProvisionDeposits, monthInvestPlanned, monthInvestDone, totalInvested, reserveTotal, reimbPending, reimbMonth, reimbOutstanding, monthReimbursements, monthSummary, commitmentBreakdown, expensesByCategory, annualRows, alertsFor, simulatePurchase, carFuelStats };
+return { monthIncomes, monthExpenses, expenseNet, recurringOccurrences, monthInstallments, installmentNet, futureInstallmentsTotal, cardInvoice, provisionMonthly, monthProvisions, monthProvisionDeposits, monthInvestPlanned, monthInvestDone, totalInvested, reserveTotal, monthInvestRedemptions, reimbPending, reimbMonth, reimbOutstanding, monthReimbursements, monthSummary, commitmentBreakdown, expensesByCategory, annualRows, alertsFor, simulatePurchase, carFuelStats };
 })();
 
 __m['charts'] = (() => {
@@ -2018,9 +2035,12 @@ function fields(vals = {}) {
   ];
 }
 
+const filtro = { tipo: '' };
+
 function render(el, rerender) {
   const ym = ui.month;
-  const incomes = monthIncomes(ym).sort((a, b) => a.data.localeCompare(b.data));
+  let incomes = monthIncomes(ym).sort((a, b) => a.data.localeCompare(b.data));
+  if (filtro.tipo) incomes = incomes.filter(i => i.tipo === filtro.tipo);
 
   el.append(h('div', { class: 'grid grid-cards' },
     statCard('Total do mês', sum(incomes, i => i.valor)),
@@ -2033,17 +2053,26 @@ function render(el, rerender) {
     onclick: () => formModal('Nova receita', fields(), {}, vals => { add('incomes', vals); rerender(); }),
   }, '+ Nova receita');
 
+  const sel = (k, opts, label) => h('select', { onchange: e => { filtro[k] = e.target.value; rerender(); } },
+    h('option', { value: '' }, label),
+    opts.map(o => {
+      const [v, l] = Array.isArray(o) ? o : [o, o];
+      return h('option', { value: v, selected: filtro[k] === v }, l);
+    }));
+
   el.append(card(null,
     h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, 'Receitas do mês'), addBtn),
+    h('div', { class: 'filters' }, sel('tipo', TIPOS_RECEITA, 'Todos os tipos')),
     table([
       { label: 'Data', k: 'data', date: true },
       { label: 'Descrição', render: r => h('span', {}, r.descricao, r.recorrente || r.virtual ? h('span', { title: 'Recorrente', style: 'margin-left:6px' }, '🔁') : null) },
       { label: 'Categoria', k: 'categoria' },
       { label: 'Tipo', render: r => TIPO_LABEL[r.tipo] || r.tipo },
+      { label: 'Origem', render: r => r.origem || '—' },
       { label: 'Valor', k: 'valor', money: true },
       { label: 'Status', render: r => badge(r.status) },
       { label: '', render: r => actions(r, rerender), right: true },
-    ], incomes, { empty: 'Nenhuma receita neste mês. Cadastre sua renda para começar.' })));
+    ], incomes, { empty: 'Nenhuma receita neste mês para este filtro.' })));
 }
 
 function actions(r, rerender) {
@@ -2067,7 +2096,17 @@ function actions(r, rerender) {
     formModal('Editar receita', fields(), real, vals => { update('incomes', real.id, vals); rerender(); });
   }, 'Editar']);
   if (!r.virtual) {
-    btns.push(['🗑', () => confirmModal(`Excluir a receita "${r.descricao}"?${r.recorrente ? ' As projeções futuras também deixarão de aparecer.' : ''}`, () => { remove('incomes', r.id); rerender(); }), 'Excluir']);
+    const resgate = db.investRedemptions.find(x => x.incomeId === r.id);
+    const aviso = resgate ? ' O saldo do investimento de origem será restaurado.' : (r.recorrente ? ' As projeções futuras também deixarão de aparecer.' : '');
+    btns.push(['🗑', () => confirmModal(`Excluir a receita "${r.descricao}"?${aviso}`, () => {
+      if (resgate) {
+        const inv = db.investments.find(x => x.id === resgate.investimentoId);
+        if (inv) update('investments', inv.id, { valorAtual: (Number(inv.valorAtual) || 0) + resgate.valor });
+        remove('investRedemptions', resgate.id);
+      }
+      remove('incomes', r.id);
+      rerender();
+    }), 'Excluir']);
   }
   return rowActions(...btns);
 }
@@ -2820,10 +2859,10 @@ return { render };
 })();
 
 __m['investimentos'] = (() => {
-// Investimentos: carteira por banco e produto, aportes e meta de reserva.
+// Investimentos: carteira por banco e produto, aportes, resgates e meta de reserva.
 const { h, fmt, todayISO, ymOf, sum } = __m['utils'];
 const { db, ui, add, update, remove, TIPOS_INVESTIMENTO, OBJETIVOS_INVESTIMENTO } = __m['store'];
-const { totalInvested, reserveTotal, monthInvestDone, monthInvestPlanned } = __m['calc'];
+const { totalInvested, reserveTotal, monthInvestDone, monthInvestPlanned, monthInvestRedemptions } = __m['calc'];
 const { card, table, formModal, confirmModal, rowActions, statCard, toast, alertBanner } = __m['ui'];
 const { donut } = __m['charts'];
 
@@ -2888,6 +2927,7 @@ function render(el, rerender) {
       { label: 'Liquidez', k: 'liquidez' },
       { label: '', render: i => rowActions(
           ['💰', () => aporteModal(i, rerender), 'Registrar aporte'],
+          ['💸', () => resgateModal(i, rerender), 'Registrar resgate'],
           ['✏️', () => formModal('Editar investimento', fields(), i, vals => { update('investments', i.id, vals); rerender(); }), 'Editar'],
           ['🗑', () => confirmModal(`Excluir o investimento "${i.produto}"?`, () => { remove('investments', i.id); rerender(); }), 'Excluir']), right: true },
     ], db.investments, { empty: 'Nenhum investimento cadastrado. Separe o dinheiro investido do disponível para ver sua evolução patrimonial.' })));
@@ -2907,6 +2947,27 @@ function render(el, rerender) {
             rerender();
           }), 'Excluir']), right: true },
       ], aportes)));
+  }
+
+  // Resgates do mês — o valor já entrou em Receitas como "Resgate de Investimento",
+  // aqui é só o histórico com origem e efeito no saldo do investimento.
+  const resgates = monthInvestRedemptions(ym);
+  if (resgates.length) {
+    el.append(card('Resgates registrados no mês',
+      table([
+        { label: 'Data', k: 'data', date: true },
+        { label: 'Origem', render: r => `${r.bancoOrigem} · ${r.produtoOrigem}` },
+        { label: 'Valor resgatado', k: 'valor', money: true },
+        { label: 'Saldo anterior', k: 'saldoAnterior', money: true },
+        { label: 'Saldo atualizado', k: 'saldoAtualizado', money: true },
+        { label: '', render: r => rowActions(['🗑', () => confirmModal('Excluir este resgate? O valor voltará ao saldo do investimento e a receita correspondente será removida.', () => {
+            const inv = db.investments.find(x => x.id === r.investimentoId);
+            if (inv) update('investments', inv.id, { valorAtual: (Number(inv.valorAtual) || 0) + r.valor });
+            if (r.incomeId) remove('incomes', r.incomeId);
+            remove('investRedemptions', r.id);
+            rerender();
+          }), 'Excluir']), right: true },
+      ], resgates)));
   }
 }
 
@@ -2929,6 +2990,46 @@ function aporteModal(inv, rerender) {
     toast('Aporte registrado.');
     rerender();
   }, { saveLabel: 'Registrar aporte' });
+}
+
+// Registra um resgate: reduz o saldo do investimento de origem e lança automaticamente
+// a entrada correspondente em Receitas (tipo "Resgate de Investimento"), sem retrabalho.
+function resgateModal(inv, rerender) {
+  const saldoAnterior = Number(inv.valorAtual) || 0;
+  formModal(`Resgate — ${inv.banco} · ${inv.produto} (saldo atual: ${fmt(saldoAnterior)})`, [
+    { k: 'data', label: 'Data do resgate', type: 'date', required: true, value: todayISO() },
+    { k: 'valor', label: 'Valor resgatado (R$)', type: 'money', required: true },
+    { k: 'contaDestino', label: 'Conta de destino', type: 'text', placeholder: 'Opcional' },
+    { k: 'obs', label: 'Observações', type: 'textarea', full: true },
+  ], {}, vals => {
+    const valor = Number(vals.valor) || 0;
+    if (valor <= 0) return 'Informe um valor de resgate maior que zero.';
+    if (valor > saldoAnterior) return `O valor resgatado não pode ser maior que o saldo atual (${fmt(saldoAnterior)}).`;
+    const saldoAtualizado = +(saldoAnterior - valor).toFixed(2);
+
+    update('investments', inv.id, { valorAtual: saldoAtualizado });
+
+    const income = add('incomes', {
+      data: vals.data,
+      descricao: `Resgate de investimento, ${inv.produto}`,
+      categoria: 'Movimentação patrimonial',
+      tipo: 'resgate_investimento',
+      valor,
+      status: 'recebida',
+      origem: `${inv.banco}, ${inv.produto}`,
+    });
+
+    add('investRedemptions', {
+      investimentoId: inv.id, data: vals.data, valor,
+      saldoAnterior, saldoAtualizado,
+      bancoOrigem: inv.banco, produtoOrigem: inv.produto,
+      contaDestino: vals.contaDestino || '', obs: vals.obs || '',
+      incomeId: income.id,
+    });
+
+    toast(`Resgate registrado. Novo saldo: ${fmt(saldoAtualizado)}.`);
+    rerender();
+  }, { saveLabel: 'Registrar resgate' });
 }
 
 return { render };

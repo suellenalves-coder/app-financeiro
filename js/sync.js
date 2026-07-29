@@ -263,7 +263,7 @@ export async function pushNow() {
 const COLLECTIONS = [
   'banks', 'categoriesExpense', 'categoriesIncome', 'people', 'cards',
   'incomes', 'expenses', 'purchases', 'installments', 'recurring',
-  'provisions', 'provisionDeposits', 'investments', 'investContrib',
+  'provisions', 'provisionDeposits', 'investments', 'investContrib', 'investRedemptions',
   'reimbursements', 'rules', 'refuelings',
 ];
 

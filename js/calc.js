@@ -134,6 +134,10 @@ export function reserveTotal() {
   return sum(db.investments.filter(i => i.tipo === 'Reserva de emergência' || i.objetivo === 'Reserva de emergência'), i => i.valorAtual);
 }
 
+export function monthInvestRedemptions(ym) {
+  return db.investRedemptions.filter(r => ymOf(r.data) === ym);
+}
+
 // ---- Reembolsos ----
 export function reimbPending(r) {
   return Math.max(0, (Number(r.valorAReembolsar) || 0) - (Number(r.valorRecebido) || 0));

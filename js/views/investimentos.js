@@ -1,7 +1,7 @@
-// Investimentos: carteira por banco e produto, aportes e meta de reserva.
+// Investimentos: carteira por banco e produto, aportes, resgates e meta de reserva.
 import { h, fmt, todayISO, ymOf, sum } from '../utils.js';
 import { db, ui, add, update, remove, TIPOS_INVESTIMENTO, OBJETIVOS_INVESTIMENTO } from '../store.js';
-import { totalInvested, reserveTotal, monthInvestDone, monthInvestPlanned } from '../calc.js';
+import { totalInvested, reserveTotal, monthInvestDone, monthInvestPlanned, monthInvestRedemptions } from '../calc.js';
 import { card, table, formModal, confirmModal, rowActions, statCard, toast, alertBanner } from '../ui.js';
 import { donut } from '../charts.js';
 
@@ -66,6 +66,7 @@ export function render(el, rerender) {
       { label: 'Liquidez', k: 'liquidez' },
       { label: '', render: i => rowActions(
           ['💰', () => aporteModal(i, rerender), 'Registrar aporte'],
+          ['💸', () => resgateModal(i, rerender), 'Registrar resgate'],
           ['✏️', () => formModal('Editar investimento', fields(), i, vals => { update('investments', i.id, vals); rerender(); }), 'Editar'],
           ['🗑', () => confirmModal(`Excluir o investimento "${i.produto}"?`, () => { remove('investments', i.id); rerender(); }), 'Excluir']), right: true },
     ], db.investments, { empty: 'Nenhum investimento cadastrado. Separe o dinheiro investido do disponível para ver sua evolução patrimonial.' })));
@@ -85,6 +86,27 @@ export function render(el, rerender) {
             rerender();
           }), 'Excluir']), right: true },
       ], aportes)));
+  }
+
+  // Resgates do mês — o valor já entrou em Receitas como "Resgate de Investimento",
+  // aqui é só o histórico com origem e efeito no saldo do investimento.
+  const resgates = monthInvestRedemptions(ym);
+  if (resgates.length) {
+    el.append(card('Resgates registrados no mês',
+      table([
+        { label: 'Data', k: 'data', date: true },
+        { label: 'Origem', render: r => `${r.bancoOrigem} · ${r.produtoOrigem}` },
+        { label: 'Valor resgatado', k: 'valor', money: true },
+        { label: 'Saldo anterior', k: 'saldoAnterior', money: true },
+        { label: 'Saldo atualizado', k: 'saldoAtualizado', money: true },
+        { label: '', render: r => rowActions(['🗑', () => confirmModal('Excluir este resgate? O valor voltará ao saldo do investimento e a receita correspondente será removida.', () => {
+            const inv = db.investments.find(x => x.id === r.investimentoId);
+            if (inv) update('investments', inv.id, { valorAtual: (Number(inv.valorAtual) || 0) + r.valor });
+            if (r.incomeId) remove('incomes', r.incomeId);
+            remove('investRedemptions', r.id);
+            rerender();
+          }), 'Excluir']), right: true },
+      ], resgates)));
   }
 }
 
@@ -107,4 +129,44 @@ function aporteModal(inv, rerender) {
     toast('Aporte registrado.');
     rerender();
   }, { saveLabel: 'Registrar aporte' });
+}
+
+// Registra um resgate: reduz o saldo do investimento de origem e lança automaticamente
+// a entrada correspondente em Receitas (tipo "Resgate de Investimento"), sem retrabalho.
+function resgateModal(inv, rerender) {
+  const saldoAnterior = Number(inv.valorAtual) || 0;
+  formModal(`Resgate — ${inv.banco} · ${inv.produto} (saldo atual: ${fmt(saldoAnterior)})`, [
+    { k: 'data', label: 'Data do resgate', type: 'date', required: true, value: todayISO() },
+    { k: 'valor', label: 'Valor resgatado (R$)', type: 'money', required: true },
+    { k: 'contaDestino', label: 'Conta de destino', type: 'text', placeholder: 'Opcional' },
+    { k: 'obs', label: 'Observações', type: 'textarea', full: true },
+  ], {}, vals => {
+    const valor = Number(vals.valor) || 0;
+    if (valor <= 0) return 'Informe um valor de resgate maior que zero.';
+    if (valor > saldoAnterior) return `O valor resgatado não pode ser maior que o saldo atual (${fmt(saldoAnterior)}).`;
+    const saldoAtualizado = +(saldoAnterior - valor).toFixed(2);
+
+    update('investments', inv.id, { valorAtual: saldoAtualizado });
+
+    const income = add('incomes', {
+      data: vals.data,
+      descricao: `Resgate de investimento, ${inv.produto}`,
+      categoria: 'Movimentação patrimonial',
+      tipo: 'resgate_investimento',
+      valor,
+      status: 'recebida',
+      origem: `${inv.banco}, ${inv.produto}`,
+    });
+
+    add('investRedemptions', {
+      investimentoId: inv.id, data: vals.data, valor,
+      saldoAnterior, saldoAtualizado,
+      bancoOrigem: inv.banco, produtoOrigem: inv.produto,
+      contaDestino: vals.contaDestino || '', obs: vals.obs || '',
+      incomeId: income.id,
+    });
+
+    toast(`Resgate registrado. Novo saldo: ${fmt(saldoAtualizado)}.`);
+    rerender();
+  }, { saveLabel: 'Registrar resgate' });
 }

@@ -20,9 +20,12 @@ function fields(vals = {}) {
   ];
 }
 
+const filtro = { tipo: '' };
+
 export function render(el, rerender) {
   const ym = ui.month;
-  const incomes = monthIncomes(ym).sort((a, b) => a.data.localeCompare(b.data));
+  let incomes = monthIncomes(ym).sort((a, b) => a.data.localeCompare(b.data));
+  if (filtro.tipo) incomes = incomes.filter(i => i.tipo === filtro.tipo);
 
   el.append(h('div', { class: 'grid grid-cards' },
     statCard('Total do mês', sum(incomes, i => i.valor)),
@@ -35,17 +38,26 @@ export function render(el, rerender) {
     onclick: () => formModal('Nova receita', fields(), {}, vals => { add('incomes', vals); rerender(); }),
   }, '+ Nova receita');
 
+  const sel = (k, opts, label) => h('select', { onchange: e => { filtro[k] = e.target.value; rerender(); } },
+    h('option', { value: '' }, label),
+    opts.map(o => {
+      const [v, l] = Array.isArray(o) ? o : [o, o];
+      return h('option', { value: v, selected: filtro[k] === v }, l);
+    }));
+
   el.append(card(null,
     h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, 'Receitas do mês'), addBtn),
+    h('div', { class: 'filters' }, sel('tipo', TIPOS_RECEITA, 'Todos os tipos')),
     table([
       { label: 'Data', k: 'data', date: true },
       { label: 'Descrição', render: r => h('span', {}, r.descricao, r.recorrente || r.virtual ? h('span', { title: 'Recorrente', style: 'margin-left:6px' }, '🔁') : null) },
       { label: 'Categoria', k: 'categoria' },
       { label: 'Tipo', render: r => TIPO_LABEL[r.tipo] || r.tipo },
+      { label: 'Origem', render: r => r.origem || '—' },
       { label: 'Valor', k: 'valor', money: true },
       { label: 'Status', render: r => badge(r.status) },
       { label: '', render: r => actions(r, rerender), right: true },
-    ], incomes, { empty: 'Nenhuma receita neste mês. Cadastre sua renda para começar.' })));
+    ], incomes, { empty: 'Nenhuma receita neste mês para este filtro.' })));
 }
 
 function actions(r, rerender) {
@@ -69,7 +81,17 @@ function actions(r, rerender) {
     formModal('Editar receita', fields(), real, vals => { update('incomes', real.id, vals); rerender(); });
   }, 'Editar']);
   if (!r.virtual) {
-    btns.push(['🗑', () => confirmModal(`Excluir a receita "${r.descricao}"?${r.recorrente ? ' As projeções futuras também deixarão de aparecer.' : ''}`, () => { remove('incomes', r.id); rerender(); }), 'Excluir']);
+    const resgate = db.investRedemptions.find(x => x.incomeId === r.id);
+    const aviso = resgate ? ' O saldo do investimento de origem será restaurado.' : (r.recorrente ? ' As projeções futuras também deixarão de aparecer.' : '');
+    btns.push(['🗑', () => confirmModal(`Excluir a receita "${r.descricao}"?${aviso}`, () => {
+      if (resgate) {
+        const inv = db.investments.find(x => x.id === resgate.investimentoId);
+        if (inv) update('investments', inv.id, { valorAtual: (Number(inv.valorAtual) || 0) + resgate.valor });
+        remove('investRedemptions', resgate.id);
+      }
+      remove('incomes', r.id);
+      rerender();
+    }), 'Excluir']);
   }
   return rowActions(...btns);
 }
