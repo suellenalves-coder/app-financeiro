@@ -7,8 +7,20 @@ import { bars, donut, CHART_COLORS } from '../charts.js';
 
 const SUBCATS = ['Financiamento', 'Combustível', 'Seguro', 'Manutenção', 'Revisão', 'IPVA', 'Estacionamento', 'Lavagem', 'Multas', 'Outros'];
 
+function categoriasAtivas() {
+  return db.settings.carroCategoriasAtivas || CATEGORIAS_CARRO;
+}
+
 function isCarro(categoria) {
-  return CATEGORIAS_CARRO.includes(categoria);
+  return categoriasAtivas().includes(categoria);
+}
+
+function toggleCategoria(cat, rerender) {
+  const ativas = new Set(categoriasAtivas());
+  if (ativas.has(cat)) ativas.delete(cat); else ativas.add(cat);
+  db.settings.carroCategoriasAtivas = CATEGORIAS_CARRO.filter(c => ativas.has(c));
+  save();
+  rerender();
 }
 
 // Todas as despesas do carro em um mês (avulsas + recorrentes + parcelas), incluindo os
@@ -37,6 +49,14 @@ function carItems(ym) {
 
 export function render(el, rerender) {
   const ym = ui.month;
+  const ativas = categoriasAtivas();
+
+  el.append(card('Categorias incluídas nesta análise',
+    h('div', { style: 'display:flex;gap:16px;flex-wrap:wrap' },
+      CATEGORIAS_CARRO.map(cat => h('label', { style: 'display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px' },
+        h('input', { type: 'checkbox', checked: ativas.includes(cat), onchange: () => toggleCategoria(cat, rerender) }),
+        cat)))));
+
   const items = carItems(ym);
   const mensal = sum(items, i => i.valor);
 
@@ -91,7 +111,7 @@ export function render(el, rerender) {
       { label: 'Valor', k: 'valor', money: true },
       { label: 'Status', render: i => badge(i.status) },
     ], items.sort((a, b) => a.data.localeCompare(b.data)),
-    { empty: 'Nenhuma despesa do carro neste mês. Use as categorias Carro, Combustível ou Transporte, ou as subcategorias: ' + SUBCATS.join(', ') + '.' })));
+    { empty: `Nenhuma despesa do carro neste mês. Categorias incluídas: ${ativas.join(', ') || 'nenhuma selecionada acima'}. Subcategorias sugeridas: ${SUBCATS.join(', ')}.` })));
 
   if (provCarro.length) {
     el.append(card('Provisões ligadas ao carro',

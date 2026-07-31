@@ -5,7 +5,7 @@ const KEY = 'meu-orcamento-inteligente:v1';
 
 export const CATEGORIAS_DESPESA = [
   'Moradia', 'Condomínio', 'Luz', 'Gás', 'Internet, TV e celular', 'Mercado',
-  'Alimentação fora de casa', 'Transporte', 'Combustível', 'Carro', 'Saúde',
+  'Alimentação fora de casa', 'Transporte', 'Combustível', 'Carro', 'Pedágio/Estacionamento', 'Saúde',
   'Educação', 'Lazer', 'Viagem', 'Casa', 'Presentes', 'Beleza e cuidados pessoais',
   'Assinaturas', 'Tarifas e juros', 'Impostos', 'Dívidas', 'Outros',
 ];
@@ -62,7 +62,7 @@ export const CRITERIOS_DIVISAO = [
   ['integral', 'Reembolso integral'], ['personalizado', 'Personalizado'],
 ];
 
-export const CATEGORIAS_CARRO = ['Carro', 'Combustível', 'Transporte'];
+export const CATEGORIAS_CARRO = ['Carro', 'Combustível', 'Pedágio/Estacionamento'];
 
 function defaults() {
   return {
@@ -79,6 +79,7 @@ function defaults() {
       saldoMinimoSeguranca: 0,
       limiteParcelamentosPct: 30, // % da renda segura que os parcelamentos podem ocupar
       onboardingDone: false,
+      carroCategoriasAtivas: [...CATEGORIAS_CARRO], // quais categorias entram na análise do módulo Carro
     },
     banks: ['XP', 'Santander', 'Banco do Brasil', 'C6'].map(nome => ({ id: uid(), nome })),
     categoriesExpense: CATEGORIAS_DESPESA.map(nome => ({ id: uid(), nome, sub: [] })),
@@ -115,6 +116,9 @@ export let db = load();
 function ensureDefaultCategories(data) {
   if (!data.categoriesIncome.some(c => c.nome === 'Movimentação patrimonial')) {
     data.categoriesIncome.push({ id: uid(), nome: 'Movimentação patrimonial' });
+  }
+  if (!data.categoriesExpense.some(c => c.nome === 'Pedágio/Estacionamento')) {
+    data.categoriesExpense.push({ id: uid(), nome: 'Pedágio/Estacionamento', sub: [] });
   }
 }
 
