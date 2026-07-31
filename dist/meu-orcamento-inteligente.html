@@ -2506,8 +2506,10 @@ function render(el, rerender) {
           })),
         ];
         const todasPagas = linhas.length > 0 && linhas.every(l => l.status === 'pago');
-        return h('div', {},
-          linhas.length ? h('div', { style: 'margin:10px 0' },
+        if (!linhas.length) return h('div', { class: 'empty-state' }, 'Nenhuma parcela ou despesa neste mês.');
+        return h('details', { class: 'card-details', open: true },
+          h('summary', {}, `Lançamentos da fatura deste mês (${linhas.length})`),
+          h('div', { style: 'margin:10px 0' },
             h('button', {
               class: 'btn btn-sm ' + (todasPagas ? 'btn-ghost' : 'btn-primary'),
               onclick: () => {
@@ -2516,8 +2518,8 @@ function render(el, rerender) {
                 toast(todasPagas ? 'Pagamento da fatura desfeito.' : 'Fatura inteira marcada como paga.');
                 rerender();
               },
-            }, todasPagas ? '↩︎ Desfazer pagamento da fatura' : '✔️ Marcar fatura inteira como paga')) : null,
-          linhas.length ? table([
+            }, todasPagas ? '↩︎ Desfazer pagamento da fatura' : '✔️ Marcar fatura inteira como paga')),
+          table([
             { label: 'Descrição', k: 'descricao' },
             { label: 'Categoria', k: 'categoria' },
             { label: 'Parcela', k: 'parcela' },
@@ -2525,7 +2527,7 @@ function render(el, rerender) {
             { label: 'Status', render: l => badge(l.status) },
             { label: '', render: l => rowActions(
                 [l.status === 'pago' ? '↩︎' : '✔️', () => { l.setStatus(l.status === 'pago' ? 'previsto' : 'pago'); rerender(); }, l.status === 'pago' ? 'Desfazer pagamento' : 'Marcar como paga']), right: true },
-          ], linhas) : h('div', { class: 'empty-state' }, 'Nenhuma parcela ou despesa neste mês.'));
+          ], linhas));
       })(),
       // Todas as compras parceladas deste cartão (não só as do mês), agrupadas aqui
       // em vez de numa tabela única com todos os cartões misturados.
