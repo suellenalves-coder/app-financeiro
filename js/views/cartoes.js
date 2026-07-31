@@ -3,6 +3,7 @@ import { h, fmt, todayISO, ymNow, ymAdd, ymDiff, ymShort, ymLabel, dateInMonth, 
 import { db, ui, add, update, remove, removeWhere, save } from '../store.js';
 import { monthInstallments, cardInvoice, futureInstallmentsTotal, monthSummary } from '../calc.js';
 import { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } from '../ui.js';
+import { fields as despesaFields, saveExpense } from './despesas.js';
 
 // ---- Geração de parcelas de uma compra ----
 export function generateInstallments(purchase) {
@@ -186,6 +187,7 @@ export function render(el, rerender) {
       h('div', { class: 'card-head' },
         h('h2', { class: 'card-title' }, `💳 ${c.nome} · fatura de ${ymLabel(ym)}`),
         rowActions(
+          ['🧾', () => expenseOnCardModal(c, ym, rerender), 'Nova despesa neste cartão'],
           ['✏️', () => editCard(c, rerender), 'Editar cartão'],
           ['🗑', () => confirmModal(`Excluir o cartão "${c.nome}"? As compras e parcelas vinculadas também serão excluídas.`, () => {
             const idsCompras = db.purchases.filter(p => p.cartaoId === c.id).map(p => p.id);
@@ -317,6 +319,20 @@ function renderFutureMap(ym) {
       { label: 'Status', render: r => badge(r.status) },
       { label: 'Total do mês', render: r => r._first ? h('b', {}, fmt(r.totalMes)) : '', right: true },
     ], rows, { empty: 'Nenhuma parcela futura cadastrada.' }));
+}
+
+// Nova despesa avulsa já pré-vinculada a este cartão (mesmo cadastro de Despesas,
+// sem precisar trocar de tela nem selecionar o cartão/forma de pagamento na mão).
+function expenseOnCardModal(c, ym, rerender) {
+  const initial = {
+    cartaoId: c.id, formaPagamento: 'Cartão de crédito',
+    dataCompra: dateInMonth(ym, new Date().getDate()), status: 'previsto',
+  };
+  formModal(`Nova despesa — ${c.nome}`, despesaFields(), initial, vals => {
+    saveExpense(vals);
+    toast('Despesa cadastrada.');
+    rerender();
+  }, { wide: true });
 }
 
 // ---- Cadastro de cartões ----

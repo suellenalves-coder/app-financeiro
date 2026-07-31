@@ -65,7 +65,7 @@ export function syncReimbursement(exp) {
   save();
 }
 
-function saveExpense(vals, id) {
+export function saveExpense(vals, id) {
   if (!vals.dataVencimento) vals.dataVencimento = vals.dataCompra;
   const exp = id ? update('expenses', id, vals) : add('expenses', vals);
   syncReimbursement(exp);
