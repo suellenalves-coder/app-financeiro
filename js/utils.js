@@ -171,6 +171,15 @@ export function parseYm(s) {
   return '';
 }
 
+// Converte "05/07/2026", "05-07-2026" ou "2026-07-05" (já ISO) em 'YYYY-MM-DD'.
+export function parseDate(s) {
+  const t = String(s || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
+  const m = t.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (m) return `${m[3]}-${pad(+m[2])}-${pad(+m[1])}`;
+  return '';
+}
+
 export function sum(arr, fn = x => x) {
   return arr.reduce((acc, x) => acc + (Number(fn(x)) || 0), 0);
 }

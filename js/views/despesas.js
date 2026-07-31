@@ -1,11 +1,11 @@
-// Despesas avulsas: cadastro completo, pagamento rápido, duplicação e filtros.
-import { h, fmt, todayISO, sum, uid } from '../utils.js';
+// Despesas avulsas: cadastro completo, pagamento rápido, duplicação, filtros e importação em massa.
+import { h, fmt, todayISO, parseDate, parseTable, parseMoney, sum, uid } from '../utils.js';
 import {
   db, ui, add, update, remove, removeWhere, save, applyRules,
   CLASSIFICACAO_DESPESA, STATUS_DESPESA, FORMAS_PAGAMENTO,
 } from '../store.js';
 import { monthExpenses, expenseNet } from '../calc.js';
-import { card, table, badge, formModal, confirmModal, rowActions, statCard, toast } from '../ui.js';
+import { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } from '../ui.js';
 
 export function fields(vals = {}) {
   const cats = db.categoriesExpense.map(c => c.nome);
@@ -119,7 +119,9 @@ export function render(el, rerender) {
   el.append(card(null,
     h('div', { class: 'card-head' },
       h('h2', { class: 'card-title' }, 'Despesas do mês'),
-      h('button', { class: 'btn btn-primary btn-sm', onclick: () => quickAdd(rerender) }, '+ Nova despesa')),
+      h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
+        h('button', { class: 'btn btn-secondary btn-sm', onclick: () => importModal(rerender) }, '⬆ Importar em massa'),
+        h('button', { class: 'btn btn-primary btn-sm', onclick: () => quickAdd(rerender) }, '+ Nova despesa'))),
     h('div', { class: 'filters' },
       sel('categoria', db.categoriesExpense.map(c => c.nome), 'Todas as categorias'),
       sel('status', STATUS_DESPESA, 'Todos os status'),
@@ -154,4 +156,91 @@ function actions(e, rerender) {
       rerender();
     }), 'Excluir']);
   return rowActions(...btns);
+}
+
+// ---- Importação em massa ----
+const IMPORT_HEADERS = 'descricao;categoria;valor;data_vencimento;data_compra;forma_pagamento;banco;cartao;natureza;status;responsavel;observacoes';
+const IMPORT_EXAMPLE = 'Aluguel;Moradia;1500,00;05/07/2026;01/07/2026;Débito automático;Santander;;fixa;previsto;Suellen;pagamento mensal';
+
+function importModal(rerender) {
+  const ta = h('textarea', {
+    rows: 8, style: 'width:100%;font-family:monospace;font-size:12px',
+    placeholder: `${IMPORT_HEADERS}\n${IMPORT_EXAMPLE}`,
+  });
+  const fileInput = h('input', { type: 'file', accept: '.csv,.txt,.tsv' });
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files[0];
+    if (f) f.text().then(t => { ta.value = t; });
+  });
+  const result = h('div', { class: 'stat-sub', style: 'margin-top:8px' });
+
+  const overlay = modal('Importar despesas em massa', h('div', {},
+    h('p', { class: 'stat-sub' },
+      'Cole a tabela (do Excel, Google Sheets ou CSV) ou envie um arquivo. A primeira linha deve conter os cabeçalhos. Separadores aceitos: ponto e vírgula, vírgula ou tabulação.'),
+    h('p', { class: 'stat-sub' }, 'Colunas reconhecidas: ', h('code', {}, IMPORT_HEADERS.replaceAll(';', ' · '))),
+    h('p', { class: 'stat-sub' }, 'Datas em dd/mm/aaaa. Categoria, forma de pagamento e status são casados com os valores já cadastrados; o que não bater entra como texto livre (categoria) ou "Previsto" (status).'),
+    fileInput, h('div', { style: 'height:8px' }), ta, result,
+    h('div', { class: 'modal-actions' },
+      h('button', { class: 'btn btn-ghost', onclick: () => overlay.remove() }, 'Cancelar'),
+      h('button', { class: 'btn btn-primary', onclick: () => {
+        const res = importRows(ta.value);
+        if (res.error) { result.textContent = res.error; result.style.color = 'var(--erro)'; return; }
+        overlay.remove();
+        toast(`${res.count} despesa(s) importada(s).`);
+        rerender();
+      } }, 'Importar'))), { wide: true });
+}
+
+function importRows(text) {
+  const { rows } = parseTable(text);
+  if (!rows.length) return { error: 'Nenhuma linha encontrada. Cole os dados com a linha de cabeçalho.' };
+  const col = (r, ...names) => {
+    for (const n of names) {
+      const key = Object.keys(r).find(k => k.replace(/[\s_-]/g, '') === n.replace(/[\s_-]/g, ''));
+      if (key && r[key] !== '') return r[key];
+    }
+    return '';
+  };
+  let count = 0;
+  const errors = [];
+  rows.forEach((r, idx) => {
+    const descricao = col(r, 'descricao', 'descrição', 'item');
+    const valorTotal = parseMoney(col(r, 'valor', 'valor_total', 'valor total'));
+    if (!descricao || !valorTotal) { errors.push(idx + 2); return; }
+
+    const dataCompra = parseDate(col(r, 'data_compra', 'data da compra', 'data')) || todayISO();
+    const dataVencimento = parseDate(col(r, 'data_vencimento', 'data de vencimento', 'vencimento')) || dataCompra;
+
+    const categoriaRaw = col(r, 'categoria');
+    const categoria = db.categoriesExpense.find(c => c.nome.toLowerCase() === categoriaRaw.toLowerCase())?.nome || categoriaRaw || 'Outros';
+
+    const formaRaw = col(r, 'forma_pagamento', 'forma de pagamento', 'pagamento');
+    const formaPagamento = FORMAS_PAGAMENTO.find(f => f.toLowerCase() === formaRaw.toLowerCase()) || formaRaw;
+
+    const cartaoNome = col(r, 'cartao', 'cartão');
+    let cartaoId = '';
+    if (formaPagamento === 'Cartão de crédito' && cartaoNome) {
+      let cartao = db.cards.find(c => c.nome.toLowerCase() === cartaoNome.toLowerCase());
+      if (!cartao) cartao = add('cards', { nome: cartaoNome, banco: '', limitePlanejado: 0, ativo: true });
+      cartaoId = cartao.id;
+    }
+
+    const natureza = col(r, 'natureza').toLowerCase() === 'fixa' ? 'fixa' : 'variavel';
+
+    const statusRaw = col(r, 'status').toLowerCase();
+    const statusMatch = STATUS_DESPESA.find(([v, l]) => v === statusRaw || l.toLowerCase() === statusRaw);
+    const status = statusMatch ? statusMatch[0] : 'previsto';
+
+    add('expenses', {
+      descricao, dataCompra, dataVencimento, categoria, valorTotal,
+      formaPagamento, banco: col(r, 'banco'), cartaoId, natureza, status,
+      responsavel: col(r, 'responsavel', 'responsável'),
+      reembolsavel: false,
+      obs: [col(r, 'observacoes', 'observações', 'obs'), '(importado em massa)'].filter(Boolean).join(' '),
+    });
+    count++;
+  });
+  save();
+  if (!count) return { error: `Nenhuma linha válida. Verifique descrição e valor (linhas: ${errors.join(', ')}).` };
+  return { count };
 }
