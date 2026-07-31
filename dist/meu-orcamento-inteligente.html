@@ -80,6 +80,15 @@ input, select, textarea { font: inherit; color: var(--ink); }
 .card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .card-head .card-title { margin-bottom: 0; }
 
+.card-details { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 12px; }
+.card-details summary {
+  cursor: pointer; font-size: 14px; font-weight: 600; color: var(--ink); list-style: none;
+}
+.card-details summary::-webkit-details-marker { display: none; }
+.card-details summary::before { content: '▸ '; color: var(--ink-2); }
+.card-details[open] summary::before { content: '▾ '; }
+.card-details .table-scroll, .card-details .empty-state { margin-top: 10px; }
+
 .grid { display: grid; gap: 12px; }
 .grid-cards { grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); margin-bottom: 16px; }
 .grid-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
@@ -2434,14 +2443,27 @@ function render(el, rerender) {
   const ym = ui.month;
   ensureReimbursementSync();
 
+  // ---- Ações principais (fixas no topo, antes de qualquer fatura) ----
+  el.append(card(null, h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
+    h('button', { class: 'btn btn-primary', onclick: () => formModal('Nova compra parcelada', purchaseFields(), {}, vals => {
+      savePurchase(vals);
+      warnAfterPurchase(vals);
+      rerender();
+    }, { wide: true }) }, '+ Nova compra parcelada'),
+    h('button', { class: 'btn btn-secondary', onclick: () => importModal(rerender) }, '⬆ Importar parcelamentos em massa'),
+    h('button', { class: 'btn btn-ghost', onclick: () => addCard(rerender) }, '+ Novo cartão'),
+    h('button', { class: 'btn btn-ghost', onclick: () => location.hash = '#/simulador' }, '🧮 Simular nova compra'))));
+
   if (!db.cards.length) {
     el.append(card('Comece cadastrando um cartão',
       h('p', { class: 'stat-sub' }, 'Cadastre seus cartões de crédito para acompanhar faturas e distribuir parcelas automaticamente.'),
       h('button', { class: 'btn btn-primary', onclick: () => addCard(rerender) }, '+ Cadastrar cartão')));
   }
 
-  // ---- Faturas por cartão no mês ----
-  for (const c of db.cards.filter(c => c.ativo !== false)) {
+  // ---- Faturas por cartão no mês, com as compras parceladas de cada cartão agrupadas logo abaixo ----
+  const cartoesAtivos = db.cards.filter(c => c.ativo !== false);
+  const idsCartoesAtivos = new Set(cartoesAtivos.map(c => c.id));
+  for (const c of cartoesAtivos) {
     const inv = cardInvoice(c.id, ym);
     const pct = c.limitePlanejado > 0 ? inv.total / c.limitePlanejado * 100 : 0;
     const meterColor = pct > 100 ? '#E57373' : pct > 80 ? '#F6C667' : '#7BC99A';
@@ -2504,43 +2526,49 @@ function render(el, rerender) {
             { label: '', render: l => rowActions(
                 [l.status === 'pago' ? '↩︎' : '✔️', () => { l.setStatus(l.status === 'pago' ? 'previsto' : 'pago'); rerender(); }, l.status === 'pago' ? 'Desfazer pagamento' : 'Marcar como paga']), right: true },
           ], linhas) : h('div', { class: 'empty-state' }, 'Nenhuma parcela ou despesa neste mês.'));
+      })(),
+      // Todas as compras parceladas deste cartão (não só as do mês), agrupadas aqui
+      // em vez de numa tabela única com todos os cartões misturados.
+      (() => {
+        const doCartao = db.purchases.filter(p => p.cartaoId === c.id);
+        return h('details', { class: 'card-details', open: true },
+          h('summary', {}, `Compras parceladas neste cartão (${doCartao.length})`),
+          purchasesTable(doCartao, ym, rerender));
       })()));
   }
 
-  // ---- Ações principais ----
-  el.append(card(null, h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
-    h('button', { class: 'btn btn-primary', onclick: () => formModal('Nova compra parcelada', purchaseFields(), {}, vals => {
-      savePurchase(vals);
-      warnAfterPurchase(vals);
-      rerender();
-    }, { wide: true }) }, '+ Nova compra parcelada'),
-    h('button', { class: 'btn btn-secondary', onclick: () => importModal(rerender) }, '⬆ Importar parcelamentos em massa'),
-    h('button', { class: 'btn btn-ghost', onclick: () => addCard(rerender) }, '+ Novo cartão'),
-    h('button', { class: 'btn btn-ghost', onclick: () => location.hash = '#/simulador' }, '🧮 Simular nova compra'))));
-
-  // ---- Compras parceladas cadastradas ----
-  const purchases = [...db.purchases].sort((a, b) => (b.mesInicio || '').localeCompare(a.mesInicio || ''));
-  el.append(card('Compras parceladas cadastradas',
-    table([
-      { label: 'Descrição', render: p => h('span', {}, p.descricao,
-          p.reembolsavel ? h('span', { title: `Reembolsável${p.pessoaId ? ' — ' + (db.people.find(x => x.id === p.pessoaId)?.nome || '') : ''}`, style: 'margin-left:5px' }, '🤝') : null) },
-      { label: 'Cartão', render: p => db.cards.find(c => c.id === p.cartaoId)?.nome || '—' },
-      { label: 'Categoria', k: 'categoria' },
-      { label: 'Parcelas', render: p => `${p.numParcelas}× de ${fmt(p.valorParcela || (p.valorTotal / p.numParcelas))}` },
-      { label: 'Início', render: p => ymShort(p.mesInicio) },
-      { label: 'Restante', render: p => fmt(sum(db.installments.filter(i => i.purchaseId === p.id && i.status !== 'pago' && ymDiff(i.mes, ym) >= 0), i => i.valor)), right: true },
-      { label: '', render: p => rowActions(
-          ['✏️', () => formModal('Editar compra parcelada', purchaseFields(), p, vals => { savePurchase(vals, p.id); rerender(); }, { wide: true }), 'Editar'],
-          ['🗑', () => confirmModal(`Excluir "${p.descricao}" e todas as suas parcelas?${p.reembolsavel ? ' Os reembolsos vinculados ainda não recebidos também serão removidos.' : ''}`, () => {
-            removeWhere('installments', i => i.purchaseId === p.id);
-            removeWhere('reimbursements', r => r.purchaseId === p.id && ['pendente', 'solicitado'].includes(r.status));
-            remove('purchases', p.id);
-            rerender();
-          }), 'Excluir']), right: true },
-    ], purchases, { empty: 'Nenhuma compra parcelada. Use a importação em massa para carregar as existentes.' })));
+  // ---- Compras sem cartão ativo vinculado (cartão excluído/inativo) ----
+  const orfas = db.purchases.filter(p => !idsCartoesAtivos.has(p.cartaoId));
+  if (orfas.length) {
+    el.append(card('Compras sem cartão ativo vinculado', purchasesTable(orfas, ym, rerender, { showCartao: true })));
+  }
 
   // ---- Mapa de parcelamentos futuros ----
   el.append(renderFutureMap(ym));
+}
+
+// Tabela reutilizável de compras parceladas — usada agrupada dentro de cada cartão
+// e, em caso de compra órfã (cartão excluído/inativo), num bloco à parte.
+function purchasesTable(list, ym, rerender, { showCartao = false } = {}) {
+  const purchases = [...list].sort((a, b) => (b.mesInicio || '').localeCompare(a.mesInicio || ''));
+  const cols = [
+    { label: 'Descrição', render: p => h('span', {}, p.descricao,
+        p.reembolsavel ? h('span', { title: `Reembolsável${p.pessoaId ? ' — ' + (db.people.find(x => x.id === p.pessoaId)?.nome || '') : ''}`, style: 'margin-left:5px' }, '🤝') : null) },
+    showCartao ? { label: 'Cartão', render: p => db.cards.find(c => c.id === p.cartaoId)?.nome || '— (excluído/inativo)' } : null,
+    { label: 'Categoria', k: 'categoria' },
+    { label: 'Parcelas', render: p => `${p.numParcelas}× de ${fmt(p.valorParcela || (p.valorTotal / p.numParcelas))}` },
+    { label: 'Início', render: p => ymShort(p.mesInicio) },
+    { label: 'Restante', render: p => fmt(sum(db.installments.filter(i => i.purchaseId === p.id && i.status !== 'pago' && ymDiff(i.mes, ym) >= 0), i => i.valor)), right: true },
+    { label: '', render: p => rowActions(
+        ['✏️', () => formModal('Editar compra parcelada', purchaseFields(), p, vals => { savePurchase(vals, p.id); rerender(); }, { wide: true }), 'Editar'],
+        ['🗑', () => confirmModal(`Excluir "${p.descricao}" e todas as suas parcelas?${p.reembolsavel ? ' Os reembolsos vinculados ainda não recebidos também serão removidos.' : ''}`, () => {
+          removeWhere('installments', i => i.purchaseId === p.id);
+          removeWhere('reimbursements', r => r.purchaseId === p.id && ['pendente', 'solicitado'].includes(r.status));
+          remove('purchases', p.id);
+          rerender();
+        }), 'Excluir']), right: true },
+  ].filter(Boolean);
+  return table(cols, purchases, { empty: 'Nenhuma compra parcelada. Use a importação em massa para carregar as existentes.' });
 }
 
 function renderFutureMap(ym) {

@@ -71,6 +71,15 @@ input, select, textarea { font: inherit; color: var(--ink); }
 .card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .card-head .card-title { margin-bottom: 0; }
 
+.card-details { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 12px; }
+.card-details summary {
+  cursor: pointer; font-size: 14px; font-weight: 600; color: var(--ink); list-style: none;
+}
+.card-details summary::-webkit-details-marker { display: none; }
+.card-details summary::before { content: '▸ '; color: var(--ink-2); }
+.card-details[open] summary::before { content: '▾ '; }
+.card-details .table-scroll, .card-details .empty-state { margin-top: 10px; }
+
 .grid { display: grid; gap: 12px; }
 .grid-cards { grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); margin-bottom: 16px; }
 .grid-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
