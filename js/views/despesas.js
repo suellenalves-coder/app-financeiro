@@ -159,8 +159,8 @@ function actions(e, rerender) {
 }
 
 // ---- Importação em massa ----
-const IMPORT_HEADERS = 'descricao;categoria;valor;data_vencimento;data_compra;forma_pagamento;banco;cartao;natureza;status;responsavel;observacoes';
-const IMPORT_EXAMPLE = 'Aluguel;Moradia;1500,00;05/07/2026;01/07/2026;Débito automático;Santander;;fixa;previsto;Suellen;pagamento mensal';
+const IMPORT_HEADERS = 'descricao;categoria;valor;data_vencimento;data_compra;forma_pagamento;banco;cartao;natureza;status;responsavel;reembolsavel;pessoa_reembolso;percentual_reembolso;observacoes';
+const IMPORT_EXAMPLE = 'Aluguel;Moradia;1500,00;05/07/2026;01/07/2026;Débito automático;Santander;;fixa;previsto;Suellen;não;;;pagamento mensal\nJantar dividido;Alimentação fora de casa;120,00;03/07/2026;;Pix;;;variavel;previsto;Suellen;sim;Irmão;50;';
 
 function importModal(rerender) {
   const ta = h('textarea', {
@@ -179,6 +179,7 @@ function importModal(rerender) {
       'Cole a tabela (do Excel, Google Sheets ou CSV) ou envie um arquivo. A primeira linha deve conter os cabeçalhos. Separadores aceitos: ponto e vírgula, vírgula ou tabulação.'),
     h('p', { class: 'stat-sub' }, 'Colunas reconhecidas: ', h('code', {}, IMPORT_HEADERS.replaceAll(';', ' · '))),
     h('p', { class: 'stat-sub' }, 'Datas em dd/mm/aaaa. Categoria, forma de pagamento e status são casados com os valores já cadastrados; o que não bater entra como texto livre (categoria) ou "Previsto" (status).'),
+    h('p', { class: 'stat-sub' }, 'reembolsavel aceita sim/não. Com "sim", pessoa_reembolso é criada automaticamente se ainda não existir, e percentual_reembolso divide o valor total pela mesma lógica de Reembolsos (deixe em branco para reembolso integral, 100%).'),
     fileInput, h('div', { style: 'height:8px' }), ta, result,
     h('div', { class: 'modal-actions' },
       h('button', { class: 'btn btn-ghost', onclick: () => overlay.remove() }, 'Cancelar'),
@@ -231,13 +232,31 @@ function importRows(text) {
     const statusMatch = STATUS_DESPESA.find(([v, l]) => v === statusRaw || l.toLowerCase() === statusRaw);
     const status = statusMatch ? statusMatch[0] : 'previsto';
 
-    add('expenses', {
+    // Reembolso: mesma lógica de divisão por percentual do módulo de Reembolsos
+    // (valorAReembolsar = total × percentual/100); sem percentual, assume 100% (integral).
+    const reembolsavelRaw = col(r, 'reembolsavel').trim().toLowerCase();
+    const reembolsavel = ['sim', 's', 'true', '1', 'yes'].includes(reembolsavelRaw);
+    let pessoaId = '', valorReembolsavel = '';
+    if (reembolsavel) {
+      const pessoaNome = col(r, 'pessoa_reembolso', 'pessoa reembolso', 'pessoa');
+      if (pessoaNome) {
+        let pessoa = db.people.find(p => p.nome.toLowerCase() === pessoaNome.toLowerCase());
+        if (!pessoa) pessoa = add('people', { nome: pessoaNome, ativo: true });
+        pessoaId = pessoa.id;
+      }
+      const percentualRaw = col(r, 'percentual_reembolso', 'percentual reembolso', 'percentual', '% reembolso');
+      const percentual = percentualRaw !== '' ? (Number(String(percentualRaw).replace('%', '').replace(',', '.')) || 0) : 100;
+      valorReembolsavel = +(valorTotal * percentual / 100).toFixed(2);
+    }
+
+    const exp = add('expenses', {
       descricao, dataCompra, dataVencimento, categoria, valorTotal,
       formaPagamento, banco: col(r, 'banco'), cartaoId, natureza, status,
       responsavel: col(r, 'responsavel', 'responsável'),
-      reembolsavel: false,
+      reembolsavel, pessoaId, valorReembolsavel,
       obs: [col(r, 'observacoes', 'observações', 'obs'), '(importado em massa)'].filter(Boolean).join(' '),
     });
+    syncReimbursement(exp);
     count++;
   });
   save();
