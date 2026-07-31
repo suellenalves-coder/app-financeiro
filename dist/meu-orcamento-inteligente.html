@@ -2464,6 +2464,19 @@ function render(el, rerender) {
   // ---- Faturas por cartão no mês, com as compras parceladas de cada cartão agrupadas logo abaixo ----
   const cartoesAtivos = db.cards.filter(c => c.ativo !== false);
   const idsCartoesAtivos = new Set(cartoesAtivos.map(c => c.id));
+
+  if (cartoesAtivos.length > 0) {
+    el.append(h('div', { style: 'display:flex;gap:8px;margin:-2px 0 14px' },
+      h('button', {
+        class: 'btn btn-ghost btn-sm',
+        onclick: () => el.querySelectorAll('details.card-details').forEach(d => d.removeAttribute('open')),
+      }, '▸ Agrupar tudo'),
+      h('button', {
+        class: 'btn btn-ghost btn-sm',
+        onclick: () => el.querySelectorAll('details.card-details').forEach(d => d.setAttribute('open', '')),
+      }, '▾ Expandir tudo')));
+  }
+
   for (const c of cartoesAtivos) {
     const inv = cardInvoice(c.id, ym);
     const pct = c.limitePlanejado > 0 ? inv.total / c.limitePlanejado * 100 : 0;
