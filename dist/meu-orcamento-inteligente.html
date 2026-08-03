@@ -1031,43 +1031,60 @@ async function firstSync() {
 }
 
 // Sincroniza: baixa o remoto, mescla com o local e envia o resultado.
-async function syncNow() {
-  if (!isLoggedIn()) return { changed: false };
-  state.status = 'sincronizando';
-  state.error = '';
-  try {
-    const remote = await fetchRemote();
-    let changed = false;
-    if (remote && remote.dados) {
-      const merged = mergeDb(db, remote.dados);
-      changed = JSON.stringify(merged) !== JSON.stringify(db);
-      if (changed) replaceDb(merged);
+// Duas chamadas sobrepostas (ex.: o foco da janela e o debounce de salvamento
+// disparando quase juntos) reaproveitam a MESMA sincronização em andamento, em vez
+// de rodar duas em paralelo — evita que uma pise no resultado da outra.
+let syncInFlight = null;
+function syncNow() {
+  if (!isLoggedIn()) return Promise.resolve({ changed: false });
+  if (syncInFlight) return syncInFlight;
+  syncInFlight = (async () => {
+    state.status = 'sincronizando';
+    state.error = '';
+    try {
+      const remote = await fetchRemote();
+      let changed = false;
+      if (remote && remote.dados) {
+        const merged = mergeDb(db, remote.dados);
+        changed = JSON.stringify(merged) !== JSON.stringify(db);
+        if (changed) replaceDb(merged);
+      }
+      await pushNow();
+      state.status = 'conectado';
+      state.lastSync = new Date();
+      return { changed };
+    } catch (e) {
+      state.status = 'erro';
+      state.error = e.message;
+      throw e;
+    } finally {
+      syncInFlight = null;
     }
-    await pushNow();
-    state.status = 'conectado';
-    state.lastSync = new Date();
-    return { changed };
-  } catch (e) {
-    state.status = 'erro';
-    state.error = e.message;
-    throw e;
-  }
+  })();
+  return syncInFlight;
 }
 
 // ---- Envio automático após cada alteração (com debounce) ----
+// IMPORTANTE: precisa passar por syncNow() (baixa + mescla + envia), nunca por um
+// pushNow() direto — um push "cru" sobrescreve a nuvem inteira com a cópia local,
+// apagando qualquer alteração que outro aparelho tenha enviado enquanto este estava
+// com dados desatualizados (ex.: sem ter reaberto o app/recuperado o foco).
 let pushTimer = null;
+let onRemoteChangeCb = null;
 function schedulePush() {
   if (!isLoggedIn()) return;
   clearTimeout(pushTimer);
   pushTimer = setTimeout(() => {
-    pushNow().then(() => { state.status = 'conectado'; state.error = ''; })
-      .catch(e => { state.status = 'erro'; state.error = e.message; });
+    syncNow()
+      .then(r => { if (r.changed && onRemoteChangeCb) onRemoteChangeCb(); })
+      .catch(() => { /* estado de erro já registrado dentro de syncNow */ });
   }, 2000);
 }
 
 // Inicializa: registra o gancho de save e sincroniza ao abrir/voltar para o app.
 let lastFocusSync = 0;
 function init(onRemoteChange) {
+  onRemoteChangeCb = onRemoteChange;
   setOnSave(schedulePush);
   const trySync = () => syncNow()
     .then(r => { if (r.changed && onRemoteChange) onRemoteChange(); })
