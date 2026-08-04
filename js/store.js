@@ -122,6 +122,18 @@ function ensureDefaultCategories(data) {
   }
 }
 
+// Corrige registros sem id que possam ter sido salvos por um bug já corrigido em
+// add() (ex.: receitas recorrentes materializadas, despesas duplicadas) — um item
+// sem id é descartado silenciosamente na mesclagem entre aparelhos.
+function ensureItemIds(data) {
+  for (const key of Object.keys(data)) {
+    if (!Array.isArray(data[key])) continue;
+    for (const item of data[key]) {
+      if (item && typeof item === 'object' && !item.id) item.id = uid();
+    }
+  }
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
@@ -129,6 +141,7 @@ function load() {
       const data = JSON.parse(raw);
       const merged = Object.assign(defaults(), data, { settings: Object.assign(defaults().settings, data.settings) });
       ensureDefaultCategories(merged);
+      ensureItemIds(merged);
       return merged;
     }
   } catch (e) { console.error('Falha ao carregar dados', e); }
@@ -150,6 +163,7 @@ export function save() {
 export function replaceDb(data) {
   const novo = Object.assign(defaults(), data, { settings: Object.assign(defaults().settings, data.settings) });
   ensureDefaultCategories(novo);
+  ensureItemIds(novo);
   for (const k of Object.keys(db)) delete db[k];
   Object.assign(db, novo);
   localStorage.setItem(KEY, JSON.stringify(db));
@@ -162,8 +176,12 @@ export function resetAll() {
 
 // CRUD genérico por coleção. _ts marca a última alteração de cada item,
 // usado na mesclagem entre aparelhos (o mais recente vence, item a item).
+// id e _ts vêm DEPOIS do ...obj de propósito: um chamador que espalhe um objeto
+// com `id: undefined` (ex.: ao duplicar/materializar um registro) não pode apagar
+// o id novo — um item sem id é descartado silenciosamente na mesclagem entre
+// aparelhos (ver mergeById em sync.js), então isso já causou perda de dados real.
 export function add(coll, obj) {
-  const item = { id: uid(), ...obj, _ts: Date.now() };
+  const item = { ...obj, id: uid(), _ts: Date.now() };
   db[coll].push(item);
   save();
   return item;

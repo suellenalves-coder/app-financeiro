@@ -271,7 +271,10 @@ function mergeById(a, b, deleted, bWinsTies) {
   const map = new Map();
   const putAll = (list, winsTies) => {
     for (const item of list || []) {
-      if (!item || !item.id || deleted[item.id]) continue;
+      // Um item sem id não tem como ser mesclado por id — cai fora do resultado.
+      // Se isso disparar, há um bug em algum add()/duplicação criando registro sem id.
+      if (item && !item.id) { console.warn('Sincronização: item sem id descartado do merge', item); continue; }
+      if (!item || deleted[item.id]) continue;
       const cur = map.get(item.id);
       if (!cur) { map.set(item.id, item); continue; }
       const tsCur = Number(cur._ts) || 0;

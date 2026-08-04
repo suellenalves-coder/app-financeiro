@@ -64,7 +64,9 @@ function actions(r, rerender) {
   // Ocorrência projetada de receita recorrente: ao editar/receber, materializa o lançamento no mês.
   const materialize = () => {
     if (!r.virtual) return r;
-    const real = { ...r, id: undefined, virtual: undefined };
+    const real = { ...r };
+    delete real.id;
+    delete real.virtual;
     return add('incomes', real);
   };
   const btns = [];

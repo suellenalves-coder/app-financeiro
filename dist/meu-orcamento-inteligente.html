@@ -607,6 +607,18 @@ function ensureDefaultCategories(data) {
   }
 }
 
+// Corrige registros sem id que possam ter sido salvos por um bug já corrigido em
+// add() (ex.: receitas recorrentes materializadas, despesas duplicadas) — um item
+// sem id é descartado silenciosamente na mesclagem entre aparelhos.
+function ensureItemIds(data) {
+  for (const key of Object.keys(data)) {
+    if (!Array.isArray(data[key])) continue;
+    for (const item of data[key]) {
+      if (item && typeof item === 'object' && !item.id) item.id = uid();
+    }
+  }
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
@@ -614,6 +626,7 @@ function load() {
       const data = JSON.parse(raw);
       const merged = Object.assign(defaults(), data, { settings: Object.assign(defaults().settings, data.settings) });
       ensureDefaultCategories(merged);
+      ensureItemIds(merged);
       return merged;
     }
   } catch (e) { console.error('Falha ao carregar dados', e); }
@@ -635,6 +648,7 @@ function save() {
 function replaceDb(data) {
   const novo = Object.assign(defaults(), data, { settings: Object.assign(defaults().settings, data.settings) });
   ensureDefaultCategories(novo);
+  ensureItemIds(novo);
   for (const k of Object.keys(db)) delete db[k];
   Object.assign(db, novo);
   localStorage.setItem(KEY, JSON.stringify(db));
@@ -647,8 +661,12 @@ function resetAll() {
 
 // CRUD genérico por coleção. _ts marca a última alteração de cada item,
 // usado na mesclagem entre aparelhos (o mais recente vence, item a item).
+// id e _ts vêm DEPOIS do ...obj de propósito: um chamador que espalhe um objeto
+// com `id: undefined` (ex.: ao duplicar/materializar um registro) não pode apagar
+// o id novo — um item sem id é descartado silenciosamente na mesclagem entre
+// aparelhos (ver mergeById em sync.js), então isso já causou perda de dados real.
 function add(coll, obj) {
-  const item = { id: uid(), ...obj, _ts: Date.now() };
+  const item = { ...obj, id: uid(), _ts: Date.now() };
   db[coll].push(item);
   save();
   return item;
@@ -973,7 +991,10 @@ function mergeById(a, b, deleted, bWinsTies) {
   const map = new Map();
   const putAll = (list, winsTies) => {
     for (const item of list || []) {
-      if (!item || !item.id || deleted[item.id]) continue;
+      // Um item sem id não tem como ser mesclado por id — cai fora do resultado.
+      // Se isso disparar, há um bug em algum add()/duplicação criando registro sem id.
+      if (item && !item.id) { console.warn('Sincronização: item sem id descartado do merge', item); continue; }
+      if (!item || deleted[item.id]) continue;
       const cur = map.get(item.id);
       if (!cur) { map.set(item.id, item); continue; }
       const tsCur = Number(cur._ts) || 0;
@@ -2118,7 +2139,9 @@ function actions(r, rerender) {
   // Ocorrência projetada de receita recorrente: ao editar/receber, materializa o lançamento no mês.
   const materialize = () => {
     if (!r.virtual) return r;
-    const real = { ...r, id: undefined, virtual: undefined };
+    const real = { ...r };
+    delete real.id;
+    delete real.virtual;
     return add('incomes', real);
   };
   const btns = [];
@@ -2300,7 +2323,8 @@ function actions(e, rerender) {
   btns.push(
     ['✏️', () => formModal('Editar despesa', fields(), e, vals => { saveExpense(vals, e.id); rerender(); }, { wide: true }), 'Editar'],
     ['⧉', () => {
-      const copy = { ...e, id: undefined, status: 'previsto', dataPagamento: '' };
+      const copy = { ...e, status: 'previsto', dataPagamento: '' };
+      delete copy.id;
       formModal('Duplicar despesa', fields(), copy, vals => { saveExpense(vals); toast('Despesa duplicada.'); rerender(); }, { wide: true });
     }, 'Duplicar'],
     ['🗑', () => confirmModal(`Excluir a despesa "${e.descricao}"?`, () => {

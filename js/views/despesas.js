@@ -147,7 +147,8 @@ function actions(e, rerender) {
   btns.push(
     ['✏️', () => formModal('Editar despesa', fields(), e, vals => { saveExpense(vals, e.id); rerender(); }, { wide: true }), 'Editar'],
     ['⧉', () => {
-      const copy = { ...e, id: undefined, status: 'previsto', dataPagamento: '' };
+      const copy = { ...e, status: 'previsto', dataPagamento: '' };
+      delete copy.id;
       formModal('Duplicar despesa', fields(), copy, vals => { saveExpense(vals); toast('Despesa duplicada.'); rerender(); }, { wide: true });
     }, 'Duplicar'],
     ['🗑', () => confirmModal(`Excluir a despesa "${e.descricao}"?`, () => {
