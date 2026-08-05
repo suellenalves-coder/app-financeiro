@@ -236,6 +236,12 @@ input, select, textarea { font: inherit; color: var(--ink); }
 .form-check { flex-direction: row; align-items: center; gap: 8px; padding-top: 18px; font-size: 14px; }
 .form-check input { width: 17px; height: 17px; accent-color: #2E9E63; }
 .form-help { color: var(--ink-2); }
+.chip-row { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+.chip-btn {
+  border: 1px solid var(--border); background: var(--cinza-gelo); color: var(--ink);
+  border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.chip-btn:hover { background: var(--menta); border-color: var(--menta); }
 .form-error { color: var(--erro); font-size: 13px; margin-top: 10px; }
 
 /* ---- Modal ---- */
@@ -1801,8 +1807,9 @@ function modal(title, content, { wide = false } = {}) {
 }
 
 // ---- Formulário genérico ----
-// fields: [{k, label, type, options, value, required, placeholder, help, show(vals), onchange(vals, formEl)}]
+// fields: [{k, label, type, options, value, required, placeholder, help, show(vals), onchange(vals, formEl), chips}]
 // type: text | money | number | date | month | select | check | textarea
+// chips: [[label, value], ...] — atalhos que preenchem o campo com um clique (ex.: 100%/50%)
 function formModal(title, fields, values, onSave, { wide = false, saveLabel = 'Salvar' } = {}) {
   const vals = { ...values };
   const form = h('form', { class: 'form-grid' });
@@ -1856,11 +1863,21 @@ function formModal(title, fields, values, onSave, { wide = false, saveLabel = 'S
 
   const rows = fields.map(f => {
     const input = fieldInput(f);
+    const chipRow = f.chips ? h('div', { class: 'chip-row' },
+      f.chips.map(([label, value]) => h('button', {
+        type: 'button', class: 'chip-btn',
+        onclick: () => {
+          vals[f.k] = value;
+          if (f.onchange) f.onchange(vals, form);
+          refreshVisibility();
+          syncValues();
+        },
+      }, label))) : null;
     const row = f.type === 'check'
       ? h('label', { class: 'form-field form-check', 'data-k': f.k }, input, h('span', {}, f.label))
       : h('label', { class: `form-field ${f.full ? 'form-full' : ''}`, 'data-k': f.k },
           h('span', { class: 'form-label' }, f.label + (f.required ? ' *' : '')),
-          input,
+          input, chipRow,
           f.help ? h('small', { class: 'form-help' }, f.help) : null);
     row._field = f;
     return row;
@@ -2286,8 +2303,19 @@ const { db, ui, add, update, remove, removeWhere, save, applyRules, CLASSIFICACA
 const { monthExpenses, expenseNet } = __m['calc'];
 const { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } = __m['ui'];
 
+// Recalcula o valor a reembolsar (R$) a partir do percentual × valor total — usado nos
+// onchange de valorTotal, reembolsavel e percentualReembolso, pra manter os três em sincronia.
+function aplicarPercentualReembolso(v) {
+  v.valorReembolsavel = +((Number(v.valorTotal) || 0) * (Number(v.percentualReembolso) || 0) / 100).toFixed(2);
+}
+
+// vals: despesa sendo editada (ou {} para uma nova), só pra pré-preencher o percentual de
+// registros antigos que só tinham o valor fixo em R$ salvo (compatibilidade).
 function fields(vals = {}) {
   const cats = db.categoriesExpense.map(c => c.nome);
+  const percentualPadrao = vals.percentualReembolso ??
+    (Number(vals.valorTotal) > 0 && Number(vals.valorReembolsavel) > 0
+      ? +(Number(vals.valorReembolsavel) / Number(vals.valorTotal) * 100).toFixed(1) : 100);
   return [
     { k: 'descricao', label: 'Descrição', type: 'text', required: true, full: true,
       onchange: v => {
@@ -2298,7 +2326,8 @@ function fields(vals = {}) {
     { k: 'dataVencimento', label: 'Data de vencimento', type: 'date', help: 'Se vazio, usa a data da compra.' },
     { k: 'categoria', label: 'Categoria', type: 'select', options: cats },
     { k: 'subcategoria', label: 'Subcategoria', type: 'text' },
-    { k: 'valorTotal', label: 'Valor total (R$)', type: 'money', required: true },
+    { k: 'valorTotal', label: 'Valor total (R$)', type: 'money', required: true,
+      onchange: v => { if (v.reembolsavel) aplicarPercentualReembolso(v); } },
     { k: 'formaPagamento', label: 'Forma de pagamento', type: 'select', options: FORMAS_PAGAMENTO },
     { k: 'banco', label: 'Banco', type: 'select', options: db.banks.map(b => b.nome) },
     { k: 'cartaoId', label: 'Cartão', type: 'select', options: db.cards.map(c => [c.id, c.nome]),
@@ -2307,12 +2336,19 @@ function fields(vals = {}) {
     { k: 'tipo', label: 'Classificação estratégica', type: 'select', options: CLASSIFICACAO_DESPESA },
     { k: 'status', label: 'Status de pagamento', type: 'select', options: STATUS_DESPESA, value: 'previsto', required: true },
     { k: 'responsavel', label: 'Responsável', type: 'text', placeholder: 'Quem fez o gasto' },
-    { k: 'reembolsavel', label: 'Despesa reembolsável / compartilhada', type: 'check' },
+    { k: 'reembolsavel', label: 'Despesa reembolsável / compartilhada', type: 'check',
+      onchange: v => {
+        if (v.reembolsavel && !v.percentualReembolso) v.percentualReembolso = percentualPadrao;
+        if (v.reembolsavel) aplicarPercentualReembolso(v);
+      } },
     { k: 'pessoaId', label: 'Pessoa que vai reembolsar', type: 'select',
       options: db.people.map(p => [p.id, p.nome]), show: v => v.reembolsavel,
       help: db.people.length ? '' : 'Cadastre pessoas em Configurações.' },
-    { k: 'valorReembolsavel', label: 'Valor a reembolsar (R$)', type: 'money', show: v => v.reembolsavel,
-      help: 'Só a parte líquida (total − reembolso) pesa no seu orçamento.' },
+    { k: 'percentualReembolso', label: 'Percentual a reembolsar (%)', type: 'number', min: 0, max: 100, step: 1,
+      show: v => v.reembolsavel, value: percentualPadrao,
+      chips: [['100% (integral)', 100], ['50% (dividir igual)', 50]],
+      help: 'Só a parte líquida (total − reembolso) pesa no seu orçamento.',
+      onchange: v => aplicarPercentualReembolso(v) },
     { k: 'provisao', label: 'Compõe uma provisão', type: 'check' },
     { k: 'comprovante', label: 'Comprovante (nome do arquivo ou link)', type: 'text', full: true },
     { k: 'obs', label: 'Observações', type: 'textarea', full: true },
@@ -2424,11 +2460,11 @@ function actions(e, rerender) {
   const btns = [];
   if (e.status !== 'pago') btns.push(['✔️', () => markPaid(e, rerender), 'Marcar como paga']);
   btns.push(
-    ['✏️', () => formModal('Editar despesa', fields(), e, vals => { saveExpense(vals, e.id); rerender(); }, { wide: true }), 'Editar'],
+    ['✏️', () => formModal('Editar despesa', fields(e), e, vals => { saveExpense(vals, e.id); rerender(); }, { wide: true }), 'Editar'],
     ['⧉', () => {
       const copy = { ...e, status: 'previsto', dataPagamento: '' };
       delete copy.id;
-      formModal('Duplicar despesa', fields(), copy, vals => { saveExpense(vals); toast('Despesa duplicada.'); rerender(); }, { wide: true });
+      formModal('Duplicar despesa', fields(copy), copy, vals => { saveExpense(vals); toast('Despesa duplicada.'); rerender(); }, { wide: true });
     }, 'Duplicar'],
     ['🗑', () => confirmModal(`Excluir a despesa "${e.descricao}"?`, () => {
       removeWhere('reimbursements', r => r.expenseId === e.id);
@@ -2580,7 +2616,18 @@ function generateInstallments(purchase) {
   return out;
 }
 
-function purchaseFields() {
+// Recalcula o valor a reembolsar (R$) a partir do percentual × valor total — usado nos
+// onchange de valorTotal, reembolsavel e percentualReembolso, pra manter os três em sincronia.
+function aplicarPercentualReembolso(v) {
+  v.valorReembolsavel = +((Number(v.valorTotal) || 0) * (Number(v.percentualReembolso) || 0) / 100).toFixed(2);
+}
+
+// existing: compra sendo editada (ou {} para uma nova), só pra pré-preencher o percentual
+// de registros antigos que só tinham o valor fixo em R$ salvo (compatibilidade).
+function purchaseFields(existing = {}) {
+  const percentualPadrao = existing.percentualReembolso ??
+    (Number(existing.valorTotal) > 0 && Number(existing.valorReembolsavel) > 0
+      ? +(Number(existing.valorReembolsavel) / Number(existing.valorTotal) * 100).toFixed(1) : 100);
   return [
     { k: 'descricao', label: 'Descrição', type: 'text', required: true, full: true },
     { k: 'dataCompra', label: 'Data da compra', type: 'date', value: todayISO() },
@@ -2588,7 +2635,7 @@ function purchaseFields() {
     { k: 'valorTotal', label: 'Valor total (R$)', type: 'money',
       onchange: v => {
         if (v.valorTotal && v.numParcelas && !v._vpManual) v.valorParcela = +(v.valorTotal / v.numParcelas).toFixed(2);
-        if (v.reembolsavel && !v._vrManual) v.valorReembolsavel = v.valorTotal;
+        if (v.reembolsavel) aplicarPercentualReembolso(v);
       } },
     { k: 'numParcelas', label: 'Quantidade de parcelas', type: 'number', required: true, min: 1, value: 1,
       onchange: v => { if (v.valorTotal && v.numParcelas && !v._vpManual) v.valorParcela = +(v.valorTotal / v.numParcelas).toFixed(2); } },
@@ -2599,15 +2646,20 @@ function purchaseFields() {
     { k: 'cartaoId', label: 'Cartão', type: 'select', options: db.cards.map(c => [c.id, c.nome]), required: true },
     { k: 'mesInicio', label: 'Mês de início da cobrança', type: 'month', required: true, value: ymNow() },
     { k: 'reembolsavel', label: 'Compra reembolsável / para outra pessoa', type: 'check',
-      onchange: v => { if (v.reembolsavel && !v.valorReembolsavel) v.valorReembolsavel = v.valorTotal || ''; } },
+      onchange: v => {
+        if (v.reembolsavel && !v.percentualReembolso) v.percentualReembolso = percentualPadrao;
+        if (v.reembolsavel) aplicarPercentualReembolso(v);
+      } },
     { k: 'responsavel', label: 'Responsável pelo pagamento', type: 'text', show: v => !v.reembolsavel,
       help: 'Some vazio quando a compra é reembolsável — a pessoa já é definida abaixo.' },
     { k: 'pessoaId', label: 'Pessoa que vai reembolsar', type: 'select',
       options: db.people.map(p => [p.id, p.nome]), show: v => v.reembolsavel,
       help: db.people.length ? '' : 'Cadastre pessoas em Configurações.' },
-    { k: 'valorReembolsavel', label: 'Valor a reembolsar (R$)', type: 'money', show: v => v.reembolsavel,
-      help: 'Divide automaticamente pelo número de parcelas: cada mês vira um reembolso separado em Reembolsos.',
-      onchange: v => { v._vrManual = true; } },
+    { k: 'percentualReembolso', label: 'Percentual a reembolsar (%)', type: 'number', min: 0, max: 100, step: 1,
+      show: v => v.reembolsavel, value: percentualPadrao,
+      chips: [['100% (integral)', 100], ['50% (dividir igual)', 50]],
+      help: 'Aplicado sobre o valor total da compra. Divide automaticamente pelo número de parcelas: cada mês vira um reembolso separado em Reembolsos.',
+      onchange: v => aplicarPercentualReembolso(v) },
     { k: 'obs', label: 'Observações', type: 'textarea', full: true },
   ];
 }
@@ -2746,7 +2798,7 @@ function purchaseCols(ym, rerender, { showCartao = false } = {}) {
     { label: 'Restante', render: p => fmt(sum(db.installments.filter(i => i.purchaseId === p.id && i.status !== 'pago' && ymDiff(i.mes, ym) >= 0), i => i.valor)), right: true },
     { label: 'Status', render: p => badge(p._statusCalc) },
     { label: '', render: p => rowActions(
-        ['✏️', () => formModal('Editar compra parcelada', purchaseFields(), p, vals => { savePurchase(vals, p.id); rerender(); }, { wide: true }), 'Editar'],
+        ['✏️', () => formModal('Editar compra parcelada', purchaseFields(p), p, vals => { savePurchase(vals, p.id); rerender(); }, { wide: true }), 'Editar'],
         ['🗑', () => confirmModal(`Excluir "${p.descricao}" e todas as suas parcelas?${p.reembolsavel ? ' Os reembolsos vinculados ainda não recebidos também serão removidos.' : ''}`, () => {
           removeWhere('installments', i => i.purchaseId === p.id);
           removeWhere('reimbursements', r => r.purchaseId === p.id && ['pendente', 'solicitado'].includes(r.status));
@@ -3588,11 +3640,15 @@ function fields(vals = {}) {
     { k: 'pessoaId', label: 'Pessoa responsável pelo reembolso', type: 'select', required: true,
       options: db.people.map(p => [p.id, p.nome]),
       help: db.people.length ? '' : 'Cadastre pessoas em Configurações → Pessoas.' },
-    { k: 'criterio', label: 'Critério de divisão', type: 'select', options: CRITERIOS_DIVISAO, value: 'fixo', required: true,
+    { k: 'criterio', label: 'Critério de divisão', type: 'select', options: CRITERIOS_DIVISAO, value: 'percentual', required: true,
       onchange: v => recalc(v) },
     { k: 'percentual', label: 'Percentual (%)', type: 'number', min: 0, max: 100,
-      show: v => v.criterio === 'percentual', onchange: v => recalc(v) },
-    { k: 'valorAReembolsar', label: 'Valor a reembolsar (R$)', type: 'money', required: true },
+      show: v => v.criterio === 'percentual',
+      chips: [['100% (integral)', 100], ['50% (dividir igual)', 50]],
+      help: 'Aplicado sobre o valor total da despesa.',
+      onchange: v => recalc(v) },
+    { k: 'valorAReembolsar', label: 'Valor a reembolsar (R$)', type: 'money', required: true,
+      help: 'Calculado automaticamente pelo critério acima — ajuste aqui só se precisar de um valor diferente.' },
     { k: 'status', label: 'Status', type: 'select', options: STATUS_REEMBOLSO, value: 'pendente', required: true },
     { k: 'comprovante', label: 'Comprovante (nome ou link)', type: 'text' },
     { k: 'obs', label: 'Observações', type: 'textarea', full: true },

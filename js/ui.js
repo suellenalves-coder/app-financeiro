@@ -16,8 +16,9 @@ export function modal(title, content, { wide = false } = {}) {
 }
 
 // ---- Formulário genérico ----
-// fields: [{k, label, type, options, value, required, placeholder, help, show(vals), onchange(vals, formEl)}]
+// fields: [{k, label, type, options, value, required, placeholder, help, show(vals), onchange(vals, formEl), chips}]
 // type: text | money | number | date | month | select | check | textarea
+// chips: [[label, value], ...] — atalhos que preenchem o campo com um clique (ex.: 100%/50%)
 export function formModal(title, fields, values, onSave, { wide = false, saveLabel = 'Salvar' } = {}) {
   const vals = { ...values };
   const form = h('form', { class: 'form-grid' });
@@ -71,11 +72,21 @@ export function formModal(title, fields, values, onSave, { wide = false, saveLab
 
   const rows = fields.map(f => {
     const input = fieldInput(f);
+    const chipRow = f.chips ? h('div', { class: 'chip-row' },
+      f.chips.map(([label, value]) => h('button', {
+        type: 'button', class: 'chip-btn',
+        onclick: () => {
+          vals[f.k] = value;
+          if (f.onchange) f.onchange(vals, form);
+          refreshVisibility();
+          syncValues();
+        },
+      }, label))) : null;
     const row = f.type === 'check'
       ? h('label', { class: 'form-field form-check', 'data-k': f.k }, input, h('span', {}, f.label))
       : h('label', { class: `form-field ${f.full ? 'form-full' : ''}`, 'data-k': f.k },
           h('span', { class: 'form-label' }, f.label + (f.required ? ' *' : '')),
-          input,
+          input, chipRow,
           f.help ? h('small', { class: 'form-help' }, f.help) : null);
     row._field = f;
     return row;

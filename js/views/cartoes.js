@@ -30,7 +30,18 @@ export function generateInstallments(purchase) {
   return out;
 }
 
-function purchaseFields() {
+// Recalcula o valor a reembolsar (R$) a partir do percentual × valor total — usado nos
+// onchange de valorTotal, reembolsavel e percentualReembolso, pra manter os três em sincronia.
+function aplicarPercentualReembolso(v) {
+  v.valorReembolsavel = +((Number(v.valorTotal) || 0) * (Number(v.percentualReembolso) || 0) / 100).toFixed(2);
+}
+
+// existing: compra sendo editada (ou {} para uma nova), só pra pré-preencher o percentual
+// de registros antigos que só tinham o valor fixo em R$ salvo (compatibilidade).
+function purchaseFields(existing = {}) {
+  const percentualPadrao = existing.percentualReembolso ??
+    (Number(existing.valorTotal) > 0 && Number(existing.valorReembolsavel) > 0
+      ? +(Number(existing.valorReembolsavel) / Number(existing.valorTotal) * 100).toFixed(1) : 100);
   return [
     { k: 'descricao', label: 'Descrição', type: 'text', required: true, full: true },
     { k: 'dataCompra', label: 'Data da compra', type: 'date', value: todayISO() },
@@ -38,7 +49,7 @@ function purchaseFields() {
     { k: 'valorTotal', label: 'Valor total (R$)', type: 'money',
       onchange: v => {
         if (v.valorTotal && v.numParcelas && !v._vpManual) v.valorParcela = +(v.valorTotal / v.numParcelas).toFixed(2);
-        if (v.reembolsavel && !v._vrManual) v.valorReembolsavel = v.valorTotal;
+        if (v.reembolsavel) aplicarPercentualReembolso(v);
       } },
     { k: 'numParcelas', label: 'Quantidade de parcelas', type: 'number', required: true, min: 1, value: 1,
       onchange: v => { if (v.valorTotal && v.numParcelas && !v._vpManual) v.valorParcela = +(v.valorTotal / v.numParcelas).toFixed(2); } },
@@ -49,15 +60,20 @@ function purchaseFields() {
     { k: 'cartaoId', label: 'Cartão', type: 'select', options: db.cards.map(c => [c.id, c.nome]), required: true },
     { k: 'mesInicio', label: 'Mês de início da cobrança', type: 'month', required: true, value: ymNow() },
     { k: 'reembolsavel', label: 'Compra reembolsável / para outra pessoa', type: 'check',
-      onchange: v => { if (v.reembolsavel && !v.valorReembolsavel) v.valorReembolsavel = v.valorTotal || ''; } },
+      onchange: v => {
+        if (v.reembolsavel && !v.percentualReembolso) v.percentualReembolso = percentualPadrao;
+        if (v.reembolsavel) aplicarPercentualReembolso(v);
+      } },
     { k: 'responsavel', label: 'Responsável pelo pagamento', type: 'text', show: v => !v.reembolsavel,
       help: 'Some vazio quando a compra é reembolsável — a pessoa já é definida abaixo.' },
     { k: 'pessoaId', label: 'Pessoa que vai reembolsar', type: 'select',
       options: db.people.map(p => [p.id, p.nome]), show: v => v.reembolsavel,
       help: db.people.length ? '' : 'Cadastre pessoas em Configurações.' },
-    { k: 'valorReembolsavel', label: 'Valor a reembolsar (R$)', type: 'money', show: v => v.reembolsavel,
-      help: 'Divide automaticamente pelo número de parcelas: cada mês vira um reembolso separado em Reembolsos.',
-      onchange: v => { v._vrManual = true; } },
+    { k: 'percentualReembolso', label: 'Percentual a reembolsar (%)', type: 'number', min: 0, max: 100, step: 1,
+      show: v => v.reembolsavel, value: percentualPadrao,
+      chips: [['100% (integral)', 100], ['50% (dividir igual)', 50]],
+      help: 'Aplicado sobre o valor total da compra. Divide automaticamente pelo número de parcelas: cada mês vira um reembolso separado em Reembolsos.',
+      onchange: v => aplicarPercentualReembolso(v) },
     { k: 'obs', label: 'Observações', type: 'textarea', full: true },
   ];
 }
@@ -196,7 +212,7 @@ function purchaseCols(ym, rerender, { showCartao = false } = {}) {
     { label: 'Restante', render: p => fmt(sum(db.installments.filter(i => i.purchaseId === p.id && i.status !== 'pago' && ymDiff(i.mes, ym) >= 0), i => i.valor)), right: true },
     { label: 'Status', render: p => badge(p._statusCalc) },
     { label: '', render: p => rowActions(
-        ['✏️', () => formModal('Editar compra parcelada', purchaseFields(), p, vals => { savePurchase(vals, p.id); rerender(); }, { wide: true }), 'Editar'],
+        ['✏️', () => formModal('Editar compra parcelada', purchaseFields(p), p, vals => { savePurchase(vals, p.id); rerender(); }, { wide: true }), 'Editar'],
         ['🗑', () => confirmModal(`Excluir "${p.descricao}" e todas as suas parcelas?${p.reembolsavel ? ' Os reembolsos vinculados ainda não recebidos também serão removidos.' : ''}`, () => {
           removeWhere('installments', i => i.purchaseId === p.id);
           removeWhere('reimbursements', r => r.purchaseId === p.id && ['pendente', 'solicitado'].includes(r.status));

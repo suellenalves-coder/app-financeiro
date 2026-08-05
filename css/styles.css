@@ -227,6 +227,12 @@ input, select, textarea { font: inherit; color: var(--ink); }
 .form-check { flex-direction: row; align-items: center; gap: 8px; padding-top: 18px; font-size: 14px; }
 .form-check input { width: 17px; height: 17px; accent-color: #2E9E63; }
 .form-help { color: var(--ink-2); }
+.chip-row { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+.chip-btn {
+  border: 1px solid var(--border); background: var(--cinza-gelo); color: var(--ink);
+  border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.chip-btn:hover { background: var(--menta); border-color: var(--menta); }
 .form-error { color: var(--erro); font-size: 13px; margin-top: 10px; }
 
 /* ---- Modal ---- */

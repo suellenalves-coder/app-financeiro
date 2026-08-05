@@ -7,8 +7,19 @@ import {
 import { monthExpenses, expenseNet } from '../calc.js';
 import { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } from '../ui.js';
 
+// Recalcula o valor a reembolsar (R$) a partir do percentual × valor total — usado nos
+// onchange de valorTotal, reembolsavel e percentualReembolso, pra manter os três em sincronia.
+function aplicarPercentualReembolso(v) {
+  v.valorReembolsavel = +((Number(v.valorTotal) || 0) * (Number(v.percentualReembolso) || 0) / 100).toFixed(2);
+}
+
+// vals: despesa sendo editada (ou {} para uma nova), só pra pré-preencher o percentual de
+// registros antigos que só tinham o valor fixo em R$ salvo (compatibilidade).
 export function fields(vals = {}) {
   const cats = db.categoriesExpense.map(c => c.nome);
+  const percentualPadrao = vals.percentualReembolso ??
+    (Number(vals.valorTotal) > 0 && Number(vals.valorReembolsavel) > 0
+      ? +(Number(vals.valorReembolsavel) / Number(vals.valorTotal) * 100).toFixed(1) : 100);
   return [
     { k: 'descricao', label: 'Descrição', type: 'text', required: true, full: true,
       onchange: v => {
@@ -19,7 +30,8 @@ export function fields(vals = {}) {
     { k: 'dataVencimento', label: 'Data de vencimento', type: 'date', help: 'Se vazio, usa a data da compra.' },
     { k: 'categoria', label: 'Categoria', type: 'select', options: cats },
     { k: 'subcategoria', label: 'Subcategoria', type: 'text' },
-    { k: 'valorTotal', label: 'Valor total (R$)', type: 'money', required: true },
+    { k: 'valorTotal', label: 'Valor total (R$)', type: 'money', required: true,
+      onchange: v => { if (v.reembolsavel) aplicarPercentualReembolso(v); } },
     { k: 'formaPagamento', label: 'Forma de pagamento', type: 'select', options: FORMAS_PAGAMENTO },
     { k: 'banco', label: 'Banco', type: 'select', options: db.banks.map(b => b.nome) },
     { k: 'cartaoId', label: 'Cartão', type: 'select', options: db.cards.map(c => [c.id, c.nome]),
@@ -28,12 +40,19 @@ export function fields(vals = {}) {
     { k: 'tipo', label: 'Classificação estratégica', type: 'select', options: CLASSIFICACAO_DESPESA },
     { k: 'status', label: 'Status de pagamento', type: 'select', options: STATUS_DESPESA, value: 'previsto', required: true },
     { k: 'responsavel', label: 'Responsável', type: 'text', placeholder: 'Quem fez o gasto' },
-    { k: 'reembolsavel', label: 'Despesa reembolsável / compartilhada', type: 'check' },
+    { k: 'reembolsavel', label: 'Despesa reembolsável / compartilhada', type: 'check',
+      onchange: v => {
+        if (v.reembolsavel && !v.percentualReembolso) v.percentualReembolso = percentualPadrao;
+        if (v.reembolsavel) aplicarPercentualReembolso(v);
+      } },
     { k: 'pessoaId', label: 'Pessoa que vai reembolsar', type: 'select',
       options: db.people.map(p => [p.id, p.nome]), show: v => v.reembolsavel,
       help: db.people.length ? '' : 'Cadastre pessoas em Configurações.' },
-    { k: 'valorReembolsavel', label: 'Valor a reembolsar (R$)', type: 'money', show: v => v.reembolsavel,
-      help: 'Só a parte líquida (total − reembolso) pesa no seu orçamento.' },
+    { k: 'percentualReembolso', label: 'Percentual a reembolsar (%)', type: 'number', min: 0, max: 100, step: 1,
+      show: v => v.reembolsavel, value: percentualPadrao,
+      chips: [['100% (integral)', 100], ['50% (dividir igual)', 50]],
+      help: 'Só a parte líquida (total − reembolso) pesa no seu orçamento.',
+      onchange: v => aplicarPercentualReembolso(v) },
     { k: 'provisao', label: 'Compõe uma provisão', type: 'check' },
     { k: 'comprovante', label: 'Comprovante (nome do arquivo ou link)', type: 'text', full: true },
     { k: 'obs', label: 'Observações', type: 'textarea', full: true },
@@ -145,11 +164,11 @@ function actions(e, rerender) {
   const btns = [];
   if (e.status !== 'pago') btns.push(['✔️', () => markPaid(e, rerender), 'Marcar como paga']);
   btns.push(
-    ['✏️', () => formModal('Editar despesa', fields(), e, vals => { saveExpense(vals, e.id); rerender(); }, { wide: true }), 'Editar'],
+    ['✏️', () => formModal('Editar despesa', fields(e), e, vals => { saveExpense(vals, e.id); rerender(); }, { wide: true }), 'Editar'],
     ['⧉', () => {
       const copy = { ...e, status: 'previsto', dataPagamento: '' };
       delete copy.id;
-      formModal('Duplicar despesa', fields(), copy, vals => { saveExpense(vals); toast('Despesa duplicada.'); rerender(); }, { wide: true });
+      formModal('Duplicar despesa', fields(copy), copy, vals => { saveExpense(vals); toast('Despesa duplicada.'); rerender(); }, { wide: true });
     }, 'Duplicar'],
     ['🗑', () => confirmModal(`Excluir a despesa "${e.descricao}"?`, () => {
       removeWhere('reimbursements', r => r.expenseId === e.id);
