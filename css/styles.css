@@ -80,6 +80,42 @@ input, select, textarea { font: inherit; color: var(--ink); }
 .card-details[open] summary::before { content: '▾ '; }
 .card-details .table-scroll, .card-details .empty-state { margin-top: 10px; }
 
+/* ---- Cartão recolhível (resumo sempre visível, detalhe sob demanda) ---- */
+.collapsible-card { padding: 0; overflow: hidden; }
+.collapsible-head {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px 18px; cursor: pointer;
+}
+.collapsible-head:hover { background: #FBFAF6; }
+.collapsible-chevron { color: var(--ink-2); font-size: 13px; flex-shrink: 0; transition: transform .15s; width: 14px; }
+.collapsible-card.open .collapsible-chevron { transform: rotate(90deg); }
+.collapsible-title { font-weight: 700; font-size: 15px; flex-shrink: 0; }
+.collapsible-sub { color: var(--ink-2); font-size: 13px; flex-shrink: 0; }
+.collapsible-fatura { font-weight: 700; font-size: 15px; flex-shrink: 0; }
+.collapsible-meter {
+  flex: 1 1 90px; min-width: 70px; max-width: 140px; height: 8px; border-radius: 999px;
+  background: var(--cinza-gelo); overflow: hidden;
+}
+.collapsible-meter > div { height: 100%; border-radius: 999px; }
+.collapsible-spacer { flex: 1; min-width: 8px; }
+.collapsible-actions { flex-shrink: 0; }
+.collapsible-body { padding: 0 18px 18px; border-top: 1px solid var(--border); }
+.collapsible-body > *:first-child { margin-top: 16px; }
+
+.badge-limite { display: inline-flex; align-items: center; gap: 4px; }
+
+/* ---- Ícones com área de toque maior (ex.: ações do cartão) ---- */
+.icon-btn-lg { padding: 8px 10px; font-size: 17px; border-radius: 10px; }
+.icon-btn-lg:hover { background: var(--cinza-gelo); }
+
+/* ---- Abas dentro de um card ---- */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+.tab-btn {
+  border: none; background: transparent; padding: 8px 4px; margin-right: 14px; font-size: 14px;
+  font-weight: 600; color: var(--ink-2); border-bottom: 2px solid transparent; cursor: pointer;
+}
+.tab-btn.active { color: var(--ink); border-bottom-color: #2E9E63; }
+.tab-btn:hover { color: var(--ink); }
+
 .grid { display: grid; gap: 12px; }
 .grid-cards { grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); margin-bottom: 16px; }
 .grid-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
@@ -120,6 +156,27 @@ input, select, textarea { font: inherit; color: var(--ink); }
 .table tr:hover td { background: #FBFAF6; }
 .table .right { text-align: right; }
 .table tfoot td, .table .total-row td { font-weight: 700; border-top: 2px solid var(--border); }
+
+/* Tabelas responsivas (opt-in via table(..., {responsive:true})): em telas estreitas,
+   cada linha vira um "card de item" — descrição, valor, status etc. empilhados — em vez
+   de colunas apertadas e rolagem horizontal. */
+@media (max-width: 640px) {
+  .table-responsive { overflow-x: visible; }
+  .table-responsive .table { border-collapse: separate; border-spacing: 0; }
+  .table-responsive .table thead { display: none; }
+  .table-responsive .table tr {
+    display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 4px 12px; margin-bottom: 8px;
+  }
+  .table-responsive .table td {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px; text-align: right;
+    padding: 7px 0; border-bottom: 1px solid #F1EEE5;
+  }
+  .table-responsive .table td::before { content: attr(data-label); color: var(--ink-2); font-size: 12px; text-align: left; }
+  .table-responsive .table td:last-child { border-bottom: none; }
+  .table-responsive .table td[data-label=""]::before { display: none; }
+  .table-responsive .table td[data-label=""] { justify-content: flex-end; }
+}
 
 /* ---- Badges ---- */
 .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
@@ -235,6 +292,7 @@ input, select, textarea { font: inherit; color: var(--ink); }
 .filters select, .filters input {
   border: 1px solid var(--border); border-radius: 10px; padding: 6px 10px; background: var(--surface); font-size: 13px;
 }
+.filters input[type=text] { flex: 1 1 220px; min-width: 160px; }
 
 /* ---- Checklist de fechamento ---- */
 .check-item { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid #F1EEE5; font-size: 14px; }

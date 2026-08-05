@@ -9,6 +9,7 @@ import * as anual from './views/anual.js';
 import * as receitas from './views/receitas.js';
 import * as despesas from './views/despesas.js';
 import * as cartoes from './views/cartoes.js';
+import * as mapaParcelamentos from './views/mapaParcelamentos.js';
 import * as recorrentes from './views/recorrentes.js';
 import * as provisoes from './views/provisoes.js';
 import * as investimentos from './views/investimentos.js';
@@ -27,6 +28,7 @@ const ROUTES = [
   { path: 'receitas', label: 'Receitas', icon: '💰', view: receitas, month: true },
   { path: 'despesas', label: 'Despesas', icon: '🧾', view: despesas, month: true },
   { path: 'cartoes', label: 'Cartões e parcelas', icon: '💳', view: cartoes, month: true },
+  { path: 'mapa-parcelamentos', label: 'Mapa de parcelamentos', icon: '🗺️', view: mapaParcelamentos, month: true },
   { path: 'recorrentes', label: 'Contas recorrentes', icon: '🔁', view: recorrentes, month: true },
   { path: 'provisoes', label: 'Provisões', icon: '🏦', view: provisoes, month: true },
   { path: 'investimentos', label: 'Investimentos', icon: '📈', view: investimentos, month: true },

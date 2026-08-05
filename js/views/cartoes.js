@@ -1,9 +1,12 @@
-// Cartões, compras parceladas, faturas, mapa de parcelas futuras e importação em massa.
+// Cartões e compras parceladas: cartões recolhidos por padrão, com abas e busca dentro
+// de cada um. O mapa de parcelamentos futuros mora em tela própria (mapaParcelamentos.js).
 import { h, fmt, todayISO, ymNow, ymAdd, ymDiff, ymShort, ymLabel, dateInMonth, sum, uid, parseTable, parseMoney, parseYm } from '../utils.js';
-import { db, ui, add, update, remove, removeWhere, save } from '../store.js';
-import { monthInstallments, cardInvoice, futureInstallmentsTotal, monthSummary } from '../calc.js';
-import { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } from '../ui.js';
+import { db, ui, add, update, remove, removeWhere, save, STATUS_DESPESA } from '../store.js';
+import { cardInvoice, monthSummary } from '../calc.js';
+import { card, table, searchableTable, badge, formModal, confirmModal, modal, rowActions, statCard, toast } from '../ui.js';
 import { fields as despesaFields, saveExpense } from './despesas.js';
+
+const BANDEIRAS = ['Visa', 'Mastercard', 'Elo', 'American Express', 'Hipercard', 'Outra'];
 
 // ---- Geração de parcelas de uma compra ----
 export function generateInstallments(purchase) {
@@ -81,7 +84,7 @@ function syncReimbursementsForPurchase(purchase, installments) {
   }
   const restantes = existing.filter(r => r.mes || ['pago', 'parcial'].includes(r.status));
 
-  const card = db.cards.find(c => c.id === purchase.cartaoId);
+  const cardObj = db.cards.find(c => c.id === purchase.cartaoId);
   const totalParcelas = installments.length || 1;
   const valorPorMes = Number(purchase.valorReembolsavel) / totalParcelas;
   const mesesAtuais = new Set(installments.map(p => p.mes));
@@ -98,7 +101,7 @@ function syncReimbursementsForPurchase(purchase, installments) {
     } else {
       add('reimbursements', {
         purchaseId: purchase.id, mes: p.mes, pessoaId: purchase.pessoaId,
-        descricao: purchase.descricao, data: dateInMonth(p.mes, Number(card?.diaVencimento) || 1),
+        descricao: purchase.descricao, data: dateInMonth(p.mes, Number(cardObj?.diaVencimento) || 1),
         categoria: purchase.categoria, valorTotalDespesa: Number(p.valor), criterio: 'fixo', percentual: '',
         valorAReembolsar: +valorPorMes.toFixed(2), valorRecebido: 0,
         status: 'pendente', dataSolicitacao: '', dataRecebimento: '', obs: '',
@@ -155,6 +158,56 @@ function warnAfterPurchase(vals) {
   toast(`Compra parcelada cadastrada: ${meses} parcela(s) de ${fmt(vals.valorParcela)}.`);
 }
 
+// ---- Estado de interface (não persistido): quais cartões estão expandidos, aba ativa e
+// filtros de busca/status por cartão e por aba. Um Map module-level mantém a mesma
+// instância entre re-renders, senão o filtro "esqueceria" a cada rerender global. ----
+const cardUi = new Map();
+function getCardUi(id) {
+  if (!cardUi.has(id)) {
+    cardUi.set(id, {
+      open: false, tab: 'mes',
+      filtroMes: { search: '', status: '' },
+      filtroTodas: { search: '', status: '' },
+    });
+  }
+  return cardUi.get(id);
+}
+const orfasFiltro = { search: '', status: '' };
+
+// Uma compra parcelada não tem UM status (cada parcela tem o seu) — "quitada" quando
+// todas as parcelas já foram pagas, "em andamento" caso contrário. Usado pro badge e
+// pro filtro de status na aba "Todas as parcelas".
+function withStatusCalc(purchases) {
+  return purchases.map(p => {
+    const parcelasP = db.installments.filter(i => i.purchaseId === p.id);
+    const quitada = parcelasP.length > 0 && parcelasP.every(i => i.status === 'pago');
+    return { ...p, _statusCalc: quitada ? 'quitada' : 'em_andamento' };
+  });
+}
+
+function purchaseCols(ym, rerender, { showCartao = false } = {}) {
+  return [
+    { label: 'Descrição', render: p => h('span', {}, p.descricao,
+        p.reembolsavel ? h('span', { title: `Reembolsável${p.pessoaId ? ' — ' + (db.people.find(x => x.id === p.pessoaId)?.nome || '') : ''}`, style: 'margin-left:5px' }, '🤝') : null) },
+    showCartao ? { label: 'Cartão', render: p => db.cards.find(c => c.id === p.cartaoId)?.nome || '— (excluído/inativo)' } : null,
+    { label: 'Categoria', k: 'categoria' },
+    { label: 'Parcelas', render: p => `${p.numParcelas}× de ${fmt(p.valorParcela || (p.valorTotal / p.numParcelas))}` },
+    { label: 'Início', render: p => ymShort(p.mesInicio) },
+    { label: 'Restante', render: p => fmt(sum(db.installments.filter(i => i.purchaseId === p.id && i.status !== 'pago' && ymDiff(i.mes, ym) >= 0), i => i.valor)), right: true },
+    { label: 'Status', render: p => badge(p._statusCalc) },
+    { label: '', render: p => rowActions(
+        ['✏️', () => formModal('Editar compra parcelada', purchaseFields(), p, vals => { savePurchase(vals, p.id); rerender(); }, { wide: true }), 'Editar'],
+        ['🗑', () => confirmModal(`Excluir "${p.descricao}" e todas as suas parcelas?${p.reembolsavel ? ' Os reembolsos vinculados ainda não recebidos também serão removidos.' : ''}`, () => {
+          removeWhere('installments', i => i.purchaseId === p.id);
+          removeWhere('reimbursements', r => r.purchaseId === p.id && ['pendente', 'solicitado'].includes(r.status));
+          remove('purchases', p.id);
+          rerender();
+        }), 'Excluir']), right: true },
+  ].filter(Boolean);
+}
+
+const STATUS_PARCELAMENTO = [['em_andamento', 'Em andamento'], ['quitada', 'Quitada']];
+
 export function render(el, rerender) {
   const ym = ui.month;
   ensureReimbursementSync();
@@ -168,7 +221,8 @@ export function render(el, rerender) {
     }, { wide: true }) }, '+ Nova compra parcelada'),
     h('button', { class: 'btn btn-secondary', onclick: () => importModal(rerender) }, '⬆ Importar parcelamentos em massa'),
     h('button', { class: 'btn btn-ghost', onclick: () => addCard(rerender) }, '+ Novo cartão'),
-    h('button', { class: 'btn btn-ghost', onclick: () => location.hash = '#/simulador' }, '🧮 Simular nova compra'))));
+    h('button', { class: 'btn btn-ghost', onclick: () => location.hash = '#/simulador' }, '🧮 Simular nova compra'),
+    h('button', { class: 'btn btn-ghost', onclick: () => location.hash = '#/mapa-parcelamentos' }, '🗺️ Mapa de parcelamentos futuros'))));
 
   if (!db.cards.length) {
     el.append(card('Comece cadastrando um cartão',
@@ -176,162 +230,144 @@ export function render(el, rerender) {
       h('button', { class: 'btn btn-primary', onclick: () => addCard(rerender) }, '+ Cadastrar cartão')));
   }
 
-  // ---- Faturas por cartão no mês, com as compras parceladas de cada cartão agrupadas logo abaixo ----
+  // ---- Faturas por cartão no mês: cada cartão inicia recolhido, mostrando só o essencial ----
   const cartoesAtivos = db.cards.filter(c => c.ativo !== false);
   const idsCartoesAtivos = new Set(cartoesAtivos.map(c => c.id));
 
-  if (cartoesAtivos.length > 0) {
+  if (cartoesAtivos.length > 1) {
     el.append(h('div', { style: 'display:flex;gap:8px;margin:-2px 0 14px' },
-      h('button', {
-        class: 'btn btn-ghost btn-sm',
-        onclick: () => el.querySelectorAll('details.card-details').forEach(d => d.removeAttribute('open')),
-      }, '▸ Agrupar tudo'),
-      h('button', {
-        class: 'btn btn-ghost btn-sm',
-        onclick: () => el.querySelectorAll('details.card-details').forEach(d => d.setAttribute('open', '')),
-      }, '▾ Expandir tudo')));
+      h('button', { class: 'btn btn-ghost btn-sm', onclick: () => { for (const c of cartoesAtivos) getCardUi(c.id).open = false; rerender(); } }, '▸ Recolher tudo'),
+      h('button', { class: 'btn btn-ghost btn-sm', onclick: () => { for (const c of cartoesAtivos) getCardUi(c.id).open = true; rerender(); } }, '▾ Expandir tudo')));
   }
 
   for (const c of cartoesAtivos) {
-    const inv = cardInvoice(c.id, ym);
-    const pct = c.limitePlanejado > 0 ? inv.total / c.limitePlanejado * 100 : 0;
-    const meterColor = pct > 100 ? '#E57373' : pct > 80 ? '#F6C667' : '#7BC99A';
-    el.append(card(null,
-      h('div', { class: 'card-head' },
-        h('h2', { class: 'card-title' }, `💳 ${c.nome} · fatura de ${ymLabel(ym)}`),
-        rowActions(
-          ['🧾', () => expenseOnCardModal(c, ym, rerender), 'Nova despesa neste cartão'],
-          ['✏️', () => editCard(c, rerender), 'Editar cartão'],
-          ['🗑', () => confirmModal(`Excluir o cartão "${c.nome}"? As compras e parcelas vinculadas também serão excluídas.`, () => {
-            const idsCompras = db.purchases.filter(p => p.cartaoId === c.id).map(p => p.id);
-            removeWhere('reimbursements', r => idsCompras.includes(r.purchaseId) && ['pendente', 'solicitado'].includes(r.status));
-            removeWhere('purchases', p => p.cartaoId === c.id);
-            removeWhere('installments', p => p.cartaoId === c.id);
-            remove('cards', c.id);
-            rerender();
-          }), 'Excluir cartão'])),
-      h('div', { class: 'grid grid-cards' },
-        statCard('Fatura prevista', inv.total, { sub: c.limitePlanejado ? `limite planejado: ${fmt(c.limitePlanejado)}` : '' }),
-        statCard('Compras novas do mês', inv.novas),
-        statCard('Parcelas herdadas', inv.herdadas),
-        statCard('Já pago', inv.pago, { tone: 'tone-ok' }),
-        statCard('Vencimento', `dia ${c.diaVencimento || '—'}`, { sub: c.diaFechamento ? `fecha dia ${c.diaFechamento}` : '' })),
-      c.limitePlanejado > 0 ? h('div', {},
-        h('div', { class: 'commit-meter' }, h('div', { style: `width:${Math.min(100, pct)}%;background:${meterColor}` })),
-        h('div', { class: 'stat-sub' }, `Sua fatura já atingiu ${pct.toFixed(0)}% do limite planejado para este mês.`)) : null,
-      (() => {
-        // Linhas da fatura: parcelas de compras parceladas + despesas avulsas pagas neste
-        // cartão (ex.: abastecimentos) — tudo num só lugar, cada uma com sua ação de pagar.
-        const linhas = [
-          ...inv.parcelas.map(p => ({
-            descricao: db.purchases.find(x => x.id === p.purchaseId)?.descricao || '—',
-            categoria: db.purchases.find(x => x.id === p.purchaseId)?.categoria || '—',
-            parcela: `${p.numero}/${p.total}`, valor: p.valor, status: p.status,
-            setStatus: novo => update('installments', p.id, { status: novo }),
-          })),
-          ...inv.despesas.map(e => ({
-            descricao: e.descricao, categoria: e.categoria || '—', parcela: '—',
-            valor: e.valorTotal, status: e.status,
-            setStatus: novo => update('expenses', e.id, { status: novo }),
-          })),
-        ];
-        const todasPagas = linhas.length > 0 && linhas.every(l => l.status === 'pago');
-        if (!linhas.length) return h('div', { class: 'empty-state' }, 'Nenhuma parcela ou despesa neste mês.');
-        return h('details', { class: 'card-details', open: true },
-          h('summary', {}, `Lançamentos da fatura deste mês (${linhas.length})`),
-          h('div', { style: 'margin:10px 0' },
-            h('button', {
-              class: 'btn btn-sm ' + (todasPagas ? 'btn-ghost' : 'btn-primary'),
-              onclick: () => {
-                const alvo = todasPagas ? 'previsto' : 'pago';
-                for (const l of linhas) l.setStatus(alvo);
-                toast(todasPagas ? 'Pagamento da fatura desfeito.' : 'Fatura inteira marcada como paga.');
-                rerender();
-              },
-            }, todasPagas ? '↩︎ Desfazer pagamento da fatura' : '✔️ Marcar fatura inteira como paga')),
-          table([
-            { label: 'Descrição', k: 'descricao' },
-            { label: 'Categoria', k: 'categoria' },
-            { label: 'Parcela', k: 'parcela' },
-            { label: 'Valor', k: 'valor', money: true },
-            { label: 'Status', render: l => badge(l.status) },
-            { label: '', render: l => rowActions(
-                [l.status === 'pago' ? '↩︎' : '✔️', () => { l.setStatus(l.status === 'pago' ? 'previsto' : 'pago'); rerender(); }, l.status === 'pago' ? 'Desfazer pagamento' : 'Marcar como paga']), right: true },
-          ], linhas));
-      })(),
-      // Todas as compras parceladas deste cartão (não só as do mês), agrupadas aqui
-      // em vez de numa tabela única com todos os cartões misturados.
-      (() => {
-        const doCartao = db.purchases.filter(p => p.cartaoId === c.id);
-        return h('details', { class: 'card-details', open: true },
-          h('summary', {}, `Compras parceladas neste cartão (${doCartao.length})`),
-          purchasesTable(doCartao, ym, rerender));
-      })()));
+    el.append(renderCartaoCard(c, ym, rerender));
   }
 
   // ---- Compras sem cartão ativo vinculado (cartão excluído/inativo) ----
   const orfas = db.purchases.filter(p => !idsCartoesAtivos.has(p.cartaoId));
   if (orfas.length) {
-    el.append(card('Compras sem cartão ativo vinculado', purchasesTable(orfas, ym, rerender, { showCartao: true })));
+    el.append(card('Compras sem cartão ativo vinculado',
+      searchableTable(withStatusCalc(orfas), purchaseCols(ym, rerender, { showCartao: true }), orfasFiltro, {
+        searchKeys: ['descricao', 'categoria'], statusOptions: STATUS_PARCELAMENTO,
+        empty: 'Nenhuma compra sem cartão vinculado.',
+      })));
   }
-
-  // ---- Mapa de parcelamentos futuros ----
-  el.append(renderFutureMap(ym));
 }
 
-// Tabela reutilizável de compras parceladas — usada agrupada dentro de cada cartão
-// e, em caso de compra órfã (cartão excluído/inativo), num bloco à parte.
-function purchasesTable(list, ym, rerender, { showCartao = false } = {}) {
-  const purchases = [...list].sort((a, b) => (b.mesInicio || '').localeCompare(a.mesInicio || ''));
-  const cols = [
-    { label: 'Descrição', render: p => h('span', {}, p.descricao,
-        p.reembolsavel ? h('span', { title: `Reembolsável${p.pessoaId ? ' — ' + (db.people.find(x => x.id === p.pessoaId)?.nome || '') : ''}`, style: 'margin-left:5px' }, '🤝') : null) },
-    showCartao ? { label: 'Cartão', render: p => db.cards.find(c => c.id === p.cartaoId)?.nome || '— (excluído/inativo)' } : null,
+// ---- Um cartão: cabeçalho sempre visível (recolhido por padrão) + corpo expansível com abas ----
+function renderCartaoCard(c, ym, rerender) {
+  const st = getCardUi(c.id);
+  const inv = cardInvoice(c.id, ym);
+  const pct = c.limitePlanejado > 0 ? inv.total / c.limitePlanejado * 100 : 0;
+  const meterColor = pct > 100 ? '#E57373' : pct > 80 ? '#F6C667' : '#7BC99A';
+  const nearLimit = c.limitePlanejado > 0 && pct > 80;
+
+  const head = h('div', {
+    class: 'collapsible-head',
+    onclick: () => { st.open = !st.open; rerender(); },
+  },
+    h('span', { class: 'collapsible-chevron' }, '▸'),
+    h('span', { class: 'collapsible-title' }, `💳 ${c.nome}`),
+    c.bandeira ? h('span', { class: 'collapsible-sub' }, c.bandeira) : null,
+    nearLimit ? h('span', { class: `badge badge-${pct > 100 ? 'bad' : 'warn'} badge-limite` },
+      pct > 100 ? '⚠️ limite estourado' : `⚠️ ${pct.toFixed(0)}% do limite`) : null,
+    h('span', { class: 'collapsible-spacer' }),
+    h('span', { class: 'collapsible-fatura' }, fmt(inv.total)),
+    h('span', { class: 'collapsible-sub' }, `vence dia ${c.diaVencimento || '—'}`),
+    c.limitePlanejado > 0 ? h('div', { class: 'collapsible-meter' },
+      h('div', { style: `width:${Math.min(100, pct)}%;background:${meterColor}` })) : null,
+    h('div', { class: 'collapsible-actions', onclick: e => e.stopPropagation() },
+      h('div', { class: 'row-actions' },
+        ['🧾', '✏️', '🗑'].map((label, i) => {
+          const acts = [
+            () => expenseOnCardModal(c, ym, rerender),
+            () => editCard(c, rerender),
+            () => confirmModal(`Excluir o cartão "${c.nome}"? As compras e parcelas vinculadas também serão excluídas.`, () => {
+              const idsCompras = db.purchases.filter(p => p.cartaoId === c.id).map(p => p.id);
+              removeWhere('reimbursements', r => idsCompras.includes(r.purchaseId) && ['pendente', 'solicitado'].includes(r.status));
+              removeWhere('purchases', p => p.cartaoId === c.id);
+              removeWhere('installments', p => p.cartaoId === c.id);
+              remove('cards', c.id);
+              rerender();
+            }),
+          ];
+          const titles = ['Nova despesa neste cartão', 'Editar cartão', 'Excluir cartão'];
+          return h('button', { class: 'icon-btn icon-btn-lg', title: titles[i], onclick: acts[i] }, label);
+        }))));
+
+  const wrap = h('div', { class: `card collapsible-card ${st.open ? 'open' : ''}` }, head);
+  if (st.open) wrap.append(renderCartaoBody(c, ym, rerender, inv, pct, meterColor, st));
+  return wrap;
+}
+
+function renderCartaoBody(c, ym, rerender, inv, pct, meterColor, st) {
+  const doCartao = db.purchases.filter(p => p.cartaoId === c.id);
+
+  // Linhas da fatura do mês: parcelas de compras parceladas + despesas avulsas pagas
+  // neste cartão (ex.: abastecimentos) — tudo num só lugar, cada uma com ação de pagar.
+  const linhas = [
+    ...inv.parcelas.map(p => ({
+      descricao: db.purchases.find(x => x.id === p.purchaseId)?.descricao || '—',
+      categoria: db.purchases.find(x => x.id === p.purchaseId)?.categoria || '—',
+      parcela: `${p.numero}/${p.total}`, valor: p.valor, status: p.status,
+      setStatus: novo => update('installments', p.id, { status: novo }),
+    })),
+    ...inv.despesas.map(e => ({
+      descricao: e.descricao, categoria: e.categoria || '—', parcela: '—',
+      valor: e.valorTotal, status: e.status,
+      setStatus: novo => update('expenses', e.id, { status: novo }),
+    })),
+  ];
+  const todasPagas = linhas.length > 0 && linhas.every(l => l.status === 'pago');
+
+  const tabs = h('div', { class: 'tabs' },
+    h('button', { class: `tab-btn ${st.tab === 'mes' ? 'active' : ''}`, onclick: () => { st.tab = 'mes'; rerender(); } }, `Este mês (${linhas.length})`),
+    h('button', { class: `tab-btn ${st.tab === 'todas' ? 'active' : ''}`, onclick: () => { st.tab = 'todas'; rerender(); } }, `Todas as parcelas (${doCartao.length})`));
+
+  const linhasCols = [
+    { label: 'Descrição', k: 'descricao' },
     { label: 'Categoria', k: 'categoria' },
-    { label: 'Parcelas', render: p => `${p.numParcelas}× de ${fmt(p.valorParcela || (p.valorTotal / p.numParcelas))}` },
-    { label: 'Início', render: p => ymShort(p.mesInicio) },
-    { label: 'Restante', render: p => fmt(sum(db.installments.filter(i => i.purchaseId === p.id && i.status !== 'pago' && ymDiff(i.mes, ym) >= 0), i => i.valor)), right: true },
-    { label: '', render: p => rowActions(
-        ['✏️', () => formModal('Editar compra parcelada', purchaseFields(), p, vals => { savePurchase(vals, p.id); rerender(); }, { wide: true }), 'Editar'],
-        ['🗑', () => confirmModal(`Excluir "${p.descricao}" e todas as suas parcelas?${p.reembolsavel ? ' Os reembolsos vinculados ainda não recebidos também serão removidos.' : ''}`, () => {
-          removeWhere('installments', i => i.purchaseId === p.id);
-          removeWhere('reimbursements', r => r.purchaseId === p.id && ['pendente', 'solicitado'].includes(r.status));
-          remove('purchases', p.id);
-          rerender();
-        }), 'Excluir']), right: true },
-  ].filter(Boolean);
-  return table(cols, purchases, { empty: 'Nenhuma compra parcelada. Use a importação em massa para carregar as existentes.' });
-}
+    { label: 'Parcela', k: 'parcela' },
+    { label: 'Valor', k: 'valor', money: true },
+    { label: 'Status', render: l => badge(l.status) },
+    { label: '', render: l => rowActions(
+        [l.status === 'pago' ? '↩︎' : '✔️', () => { l.setStatus(l.status === 'pago' ? 'previsto' : 'pago'); rerender(); }, l.status === 'pago' ? 'Desfazer pagamento' : 'Marcar como paga']), right: true },
+  ];
 
-function renderFutureMap(ym) {
-  const horizon = 18;
-  const rows = [];
-  for (let i = 0; i < horizon; i++) {
-    const m = ymAdd(ym, i);
-    const parcelas = monthInstallments(m);
-    if (!parcelas.length) continue;
-    const totalMes = sum(parcelas, p => p.valor);
-    for (const p of parcelas) {
-      const compra = db.purchases.find(x => x.id === p.purchaseId);
-      rows.push({
-        mes: ymShort(m), cartao: db.cards.find(c => c.id === p.cartaoId)?.nome || '—',
-        descricao: compra?.descricao || '—', parcela: `${p.numero}/${p.total}`,
-        valor: p.valor, categoria: compra?.categoria || '—', status: p.status, totalMes,
-        _first: p === parcelas[0],
-      });
-    }
-  }
-  return card(`Mapa de parcelamentos futuros (${fmt(futureInstallmentsTotal(ymAdd(ym, -1)))} comprometidos a partir de ${ymLabel(ym)})`,
-    table([
-      { label: 'Mês', render: r => r._first ? h('b', {}, r.mes) : h('span', { style: 'color:var(--ink-2)' }, r.mes) },
-      { label: 'Cartão', k: 'cartao' },
-      { label: 'Descrição', k: 'descricao' },
-      { label: 'Parcela', k: 'parcela' },
-      { label: 'Valor', k: 'valor', money: true },
-      { label: 'Categoria', k: 'categoria' },
-      { label: 'Status', render: r => badge(r.status) },
-      { label: 'Total do mês', render: r => r._first ? h('b', {}, fmt(r.totalMes)) : '', right: true },
-    ], rows, { empty: 'Nenhuma parcela futura cadastrada.' }));
+  const tabMes = h('div', {},
+    linhas.length ? h('div', { style: 'margin-bottom:10px' },
+      h('button', {
+        class: 'btn btn-sm ' + (todasPagas ? 'btn-ghost' : 'btn-primary'),
+        onclick: () => {
+          const alvo = todasPagas ? 'previsto' : 'pago';
+          for (const l of linhas) l.setStatus(alvo);
+          toast(todasPagas ? 'Pagamento da fatura desfeito.' : 'Fatura inteira marcada como paga.');
+          rerender();
+        },
+      }, todasPagas ? '↩︎ Desfazer pagamento da fatura' : '✔️ Marcar fatura inteira como paga')) : null,
+    searchableTable(linhas, linhasCols, st.filtroMes, {
+      searchKeys: ['descricao', 'categoria'], statusOptions: STATUS_DESPESA,
+      empty: 'Nenhuma parcela ou despesa neste mês.',
+    }));
+
+  const tabTodas = searchableTable(withStatusCalc(doCartao), purchaseCols(ym, rerender), st.filtroTodas, {
+    searchKeys: ['descricao', 'categoria'], statusOptions: STATUS_PARCELAMENTO,
+    empty: 'Nenhuma compra parcelada. Use a importação em massa para carregar as existentes.',
+  });
+
+  return h('div', { class: 'collapsible-body' },
+    h('div', { class: 'grid grid-cards' },
+      statCard('Fatura prevista', inv.total, { sub: c.limitePlanejado ? `limite planejado: ${fmt(c.limitePlanejado)}` : '' }),
+      statCard('Compras novas do mês', inv.novas),
+      statCard('Parcelas herdadas', inv.herdadas),
+      statCard('Já pago', inv.pago, { tone: 'tone-ok' }),
+      statCard('Vencimento', `dia ${c.diaVencimento || '—'}`, { sub: c.diaFechamento ? `fecha dia ${c.diaFechamento}` : '' })),
+    c.limitePlanejado > 0 ? h('div', {},
+      h('div', { class: 'commit-meter' }, h('div', { style: `width:${Math.min(100, pct)}%;background:${meterColor}` })),
+      h('div', { class: 'stat-sub' }, `Sua fatura já atingiu ${pct.toFixed(0)}% do limite planejado para este mês.`)) : null,
+    tabs,
+    st.tab === 'mes' ? tabMes : tabTodas);
 }
 
 // Nova despesa avulsa já pré-vinculada a este cartão (mesmo cadastro de Despesas,
@@ -353,6 +389,7 @@ function cardFields() {
   return [
     { k: 'nome', label: 'Nome do cartão', type: 'text', required: true },
     { k: 'banco', label: 'Banco', type: 'select', options: db.banks.map(b => b.nome) },
+    { k: 'bandeira', label: 'Bandeira', type: 'select', options: BANDEIRAS },
     { k: 'diaFechamento', label: 'Dia de fechamento', type: 'number', min: 1, max: 31 },
     { k: 'diaVencimento', label: 'Dia de vencimento', type: 'number', min: 1, max: 31 },
     { k: 'limitePlanejado', label: 'Limite planejado mensal (R$)', type: 'money', help: 'Quanto você quer gastar no máximo por fatura.' },

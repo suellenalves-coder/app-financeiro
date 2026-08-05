@@ -11,7 +11,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const MODULES = [
   'js/utils.js', 'js/store.js', 'js/sync.js', 'js/calc.js', 'js/charts.js', 'js/ui.js',
   'js/views/dashboard.js', 'js/views/anual.js', 'js/views/receitas.js',
-  'js/views/despesas.js', 'js/views/cartoes.js', 'js/views/recorrentes.js',
+  'js/views/despesas.js', 'js/views/cartoes.js', 'js/views/mapaParcelamentos.js', 'js/views/recorrentes.js',
   'js/views/provisoes.js', 'js/views/investimentos.js', 'js/views/reembolsos.js',
   'js/views/calendario.js', 'js/views/fechamento.js', 'js/views/simulador.js',
   'js/views/relatorios.js', 'js/views/carro.js', 'js/views/config.js',

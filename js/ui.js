@@ -126,25 +126,70 @@ export function confirmModal(msg, onYes, { yesLabel = 'Excluir', danger = true }
 
 // ---- Tabela ----
 // cols: [{label, render(row) | k, money, right}]
-export function table(cols, rows, { empty = 'Nenhum registro.' } = {}) {
+// responsive: true faz as linhas virarem "cards de item" (1 linha = 1 registro) em telas
+// estreitas, em vez de colunas apertadas — opt-in para não afetar tabelas existentes.
+export function table(cols, rows, { empty = 'Nenhum registro.', responsive = false } = {}) {
   if (!rows.length) return h('div', { class: 'empty-state' }, empty);
-  return h('div', { class: 'table-scroll' },
+  return h('div', { class: `table-scroll ${responsive ? 'table-responsive' : ''}` },
     h('table', { class: 'table' },
       h('thead', {}, h('tr', {}, cols.map(c => h('th', { class: c.right || c.money ? 'right' : '' }, c.label)))),
       h('tbody', {}, rows.map(r => h('tr', {}, cols.map(c => {
         let content = c.render ? c.render(r) : r[c.k];
         if (c.money) content = fmt(content);
         if (c.date) content = fmtDate(content);
-        return h('td', { class: c.right || c.money ? 'right' : '' }, content ?? '—');
+        return h('td', { class: c.right || c.money ? 'right' : '', 'data-label': c.label || '' }, content ?? '—');
       }))))));
+}
+
+// Tabela com busca (descrição/categoria etc.) e filtro de status, para listas longas.
+// filtroState: objeto mutável e persistente entre re-renders, ex.: { search: '', status: '' }
+// — o chamador é responsável por manter a MESMA instância entre chamadas (ex.: um Map
+// module-level chaveado por id), senão o filtro "esquece" a cada rerender.
+// Só a área de resultados é atualizada a cada tecla digitada (não o app inteiro), pra não
+// perder o foco do campo de busca; linhas com poucos itens (<=6) não mostram a barra.
+export function searchableTable(rows, cols, filtroState, { searchKeys = [], statusOptions, empty, responsive = true } = {}) {
+  const resultsBox = h('div', {});
+
+  function filtered() {
+    let list = rows;
+    if (filtroState.status) list = list.filter(r => (r._statusCalc ?? r.status) === filtroState.status);
+    if (filtroState.search) {
+      const q = filtroState.search.toLowerCase();
+      list = list.filter(r => searchKeys.some(k => String(r[k] ?? '').toLowerCase().includes(q)));
+    }
+    return list;
+  }
+
+  function renderResults() {
+    resultsBox.innerHTML = '';
+    resultsBox.append(table(cols, filtered(), {
+      empty: rows.length ? 'Nada encontrado para esse filtro.' : (empty || 'Nenhum registro.'),
+      responsive,
+    }));
+  }
+  renderResults();
+
+  const toolbar = rows.length > 6 ? h('div', { class: 'filters' },
+    h('input', {
+      type: 'text', placeholder: 'Buscar por descrição ou categoria…', value: filtroState.search || '',
+      oninput: e => { filtroState.search = e.target.value; renderResults(); },
+    }),
+    statusOptions ? h('select', { onchange: e => { filtroState.status = e.target.value; renderResults(); } },
+      h('option', { value: '' }, 'Todos os status'),
+      statusOptions.map(o => {
+        const [v, l] = Array.isArray(o) ? o : [o, o];
+        return h('option', { value: v, selected: filtroState.status === v }, l);
+      })) : null) : null;
+
+  return h('div', {}, toolbar, resultsBox);
 }
 
 // ---- Badges de status ----
 const BADGE_STYLES = {
-  pago: 'ok', recebida: 'ok', concluida: 'ok', ativa: 'ok',
+  pago: 'ok', recebida: 'ok', concluida: 'ok', ativa: 'ok', quitada: 'ok',
   vencido: 'bad', atrasada: 'bad', atrasado: 'bad', contestado: 'bad',
   parcial: 'warn', solicitado: 'info',
-  previsto: 'muted', prevista: 'muted', pendente: 'warn',
+  previsto: 'muted', prevista: 'muted', pendente: 'warn', em_andamento: 'muted',
   cancelado: 'muted', cancelada: 'muted', pausada: 'muted', reembolsado: 'info',
 };
 const BADGE_LABELS = {
@@ -152,7 +197,7 @@ const BADGE_LABELS = {
   vencido: 'Vencido', atrasada: 'Atrasada', atrasado: 'Atrasado', cancelado: 'Cancelado',
   cancelada: 'Cancelada', parcial: 'Parcial', pendente: 'Pendente', solicitado: 'Solicitado',
   contestado: 'Contestado', reembolsado: 'Reembolsado', ativa: 'Ativa', pausada: 'Pausada',
-  concluida: 'Concluída',
+  concluida: 'Concluída', quitada: 'Quitada', em_andamento: 'Em andamento',
 };
 export function badge(status) {
   return h('span', { class: `badge badge-${BADGE_STYLES[status] || 'muted'}` }, BADGE_LABELS[status] || status || '—');
