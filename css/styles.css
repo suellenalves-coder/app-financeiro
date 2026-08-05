@@ -136,6 +136,15 @@ input, select, textarea { font: inherit; color: var(--ink); }
 .stat-card.tone-warn .stat-value { color: #B8862F; }
 .stat-card.tone-accent { background: linear-gradient(180deg, #f4f0fc, var(--surface)); }
 
+/* ---- Destaque de valor total (ex.: total a receber em Reembolsos) ---- */
+.hero-stat {
+  background: linear-gradient(135deg, var(--menta), #DFF3E9); border: none;
+  padding: 20px 24px; margin-bottom: 16px; text-align: center;
+}
+.hero-stat .stat-label { font-size: 13px; font-weight: 600; color: #1F5C3D; }
+.hero-stat-value { font-size: 38px; font-weight: 800; letter-spacing: -1px; color: #1F5C3D; }
+@media (max-width: 860px) { .hero-stat-value { font-size: 30px; } }
+
 /* ---- Alertas ---- */
 .alerts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
 .alert { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: 12px; font-size: 14px; }
