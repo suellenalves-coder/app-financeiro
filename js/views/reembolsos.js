@@ -6,6 +6,7 @@ import { reimbPending, reimbOutstanding, reimbMonth } from '../calc.js';
 import { ensureReimbursementSync } from './cartoes.js';
 import { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } from '../ui.js';
 import { bars, CHART_COLORS } from '../charts.js';
+import * as sync from '../sync.js';
 
 // Parcela X/Y correspondente a um reembolso ligado a uma compra do cartão (ou '—' se avulso).
 function parcelaLabel(r) {
@@ -168,7 +169,9 @@ export function render(el, rerender) {
       { label: `Deve em ${ymShort(ym)}`, render: x => h('b', {}, fmt(x.doMes)), right: true },
       { label: 'Total pendente (todos os meses)', render: x => fmt(x.total), right: true },
       { label: 'Última solicitação', render: x => x.ultimaSolicitacao ? fmtDate(x.ultimaSolicitacao) : '—' },
-      { label: '', render: x => h('button', { class: 'btn btn-secondary btn-sm', onclick: () => messageModal(x.pessoa, ym) }, '💬 Gerar mensagem'), right: true },
+      { label: '', render: x => h('div', { style: 'display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap' },
+          h('button', { class: 'btn btn-ghost btn-sm', onclick: () => shareLinkModal(x.pessoa) }, '🔗 Link'),
+          h('button', { class: 'btn btn-secondary btn-sm', onclick: () => messageModal(x.pessoa, ym) }, '💬 Gerar mensagem')), right: true },
     ], porPessoa, { empty: 'Nenhum reembolso registrado. Marque despesas ou compras do cartão como reembolsáveis, ou cadastre aqui direto.' })));
 
   el.append(renderTabelaUnificada(ativos, rerender));
@@ -265,6 +268,65 @@ function novaDespesaReembolsavel(rerender) {
     add('reimbursements', { ...vals, valorRecebido: 0, dataSolicitacao: '', dataRecebimento: '' });
     rerender();
   }, { wide: true });
+}
+
+// ---- Link compartilhável só-leitura (sem login) de reembolsos pendentes de uma pessoa ----
+// Aponta para reembolso.html — uma página separada e isolada do resto do app (não importa
+// store.js/app.js), que busca os dados via uma função pública no Supabase (get_reembolsos_
+// publicos) sem nunca ter acesso a mais nada: nem outras pessoas, nem despesas gerais.
+async function shareLinkModal(pessoa) {
+  if (!sync.isLoggedIn()) {
+    toast('Configure a sincronização em Configurações antes de gerar um link — ele depende da nuvem para funcionar.');
+    return;
+  }
+  const body = h('div', {}, h('p', { class: 'stat-sub' }, 'Carregando…'));
+  const overlay = modal(`Link para ${pessoa.nome}`, body);
+
+  let existing = null;
+  try {
+    const links = await sync.listShareLinks();
+    existing = links.find(l => l.pessoa_id === pessoa.id) || null;
+  } catch (e) {
+    body.innerHTML = '';
+    body.append(h('p', { class: 'form-error' }, `Não foi possível carregar: ${e.message}. Confira se o script supabase/reembolso_links.sql já foi executado no seu projeto Supabase.`));
+    return;
+  }
+
+  function renderBody() {
+    body.innerHTML = '';
+    if (existing) {
+      const url = sync.shareLinkUrl(existing.token);
+      body.append(
+        h('p', { class: 'stat-sub' },
+          `Qualquer pessoa com este link vê só os itens pendentes de ${pessoa.nome} e o total — sem login, sem ver mais nada do app. Atualiza sozinho conforme você marca coisas como recebidas.`),
+        h('input', { type: 'text', readonly: true, value: url, onclick: e => e.target.select() }),
+        h('div', { class: 'modal-actions', style: 'justify-content:space-between' },
+          h('button', { class: 'btn btn-danger btn-sm', onclick: async () => {
+            await sync.deleteShareLink(existing.token).catch(e => toast('Erro ao revogar: ' + e.message));
+            existing = null;
+            renderBody();
+            toast('Link revogado — quem tinha o link antigo não vê mais nada.');
+          } }, '🗑 Revogar link'),
+          h('button', { class: 'btn btn-primary', onclick: () => {
+            navigator.clipboard.writeText(url).then(() => toast('Link copiado.'));
+          } }, '📋 Copiar link')));
+    } else {
+      body.append(
+        h('p', { class: 'stat-sub' }, `Gera um link só-leitura mostrando apenas os itens pendentes de ${pessoa.nome}, sem precisar de login — dá pra mandar direto pelo WhatsApp.`),
+        h('button', { class: 'btn btn-primary', onclick: async e => {
+          e.target.disabled = true;
+          try {
+            const token = await sync.createShareLink(pessoa.id);
+            existing = { token, pessoa_id: pessoa.id };
+            renderBody();
+          } catch (err) {
+            toast('Não foi possível gerar o link: ' + err.message);
+            e.target.disabled = false;
+          }
+        } }, '🔗 Gerar link'));
+    }
+  }
+  renderBody();
 }
 
 // ---- Mensagem para WhatsApp ----

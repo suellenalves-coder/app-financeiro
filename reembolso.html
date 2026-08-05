@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#FAF8F2">
+  <title>Reembolsos — Meu Orçamento Inteligente</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+  <link rel="stylesheet" href="css/styles.css">
+  <style>
+    .r-wrap { max-width: 640px; margin: 0 auto; padding: 26px 16px 60px; }
+    .r-header { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+    .r-header .r-emoji { font-size: 26px; }
+    .r-header strong { font-size: 16px; }
+    .r-foot { text-align: center; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <div class="r-wrap">
+    <div class="r-header">
+      <span class="r-emoji">🌿</span>
+      <div>
+        <strong>Meu Orçamento Inteligente</strong>
+        <div class="stat-sub">Reembolsos pendentes — visão compartilhada, só leitura</div>
+      </div>
+    </div>
+    <div id="content"><p class="stat-sub">Carregando…</p></div>
+  </div>
+
+  <script type="module">
+    // Página isolada de propósito: NÃO importa store.js/sync.js/app.js (onde vive o
+    // db local e a sessão autenticada) — só utilitários puros de formatação e UI, que
+    // não têm nenhuma referência a dados. Mesmo com um bug aqui, não há como esta
+    // página enxergar despesas, outras pessoas ou qualquer coisa fora do que a função
+    // get_reembolsos_publicos (Supabase) decidir devolver para este token específico.
+    import { fmt, h, ymShort } from './js/utils.js';
+    import { card, table, badge } from './js/ui.js';
+
+    const params = new URLSearchParams(location.search);
+    const token = params.get('token');
+    const supabaseUrl = params.get('u');
+    const anonKey = params.get('k');
+    const content = document.getElementById('content');
+
+    function renderErro(msg) {
+      content.innerHTML = '';
+      content.append(card(null, h('p', {}, '⚠️ ' + msg)));
+    }
+
+    function renderDados(data) {
+      content.innerHTML = '';
+      const items = data.items || [];
+      content.append(
+        h('div', { class: 'card hero-stat' },
+          h('div', { class: 'stat-label' }, `Total pendente de ${data.pessoa}`),
+          h('div', { class: 'hero-stat-value' }, fmt(Number(data.totalPendente) || 0))),
+        card('Itens pendentes', table([
+          { label: 'Mês', render: r => r.mes ? ymShort(r.mes) : '—' },
+          { label: 'Descrição', k: 'descricao' },
+          { label: 'Categoria', k: 'categoria' },
+          { label: 'Pendente', render: r => fmt(Number(r.pendente) || 0), right: true },
+          { label: 'Status', render: r => badge(r.status) },
+        ], items, { empty: 'Nenhum item pendente no momento. 🎉', responsive: true })),
+        h('p', { class: 'stat-sub r-foot' },
+          `Atualiza sozinho conforme os pagamentos são registrados · última verificação: ${new Date().toLocaleTimeString('pt-BR')}`));
+    }
+
+    async function carregar() {
+      if (!token || !supabaseUrl || !anonKey) { renderErro('Link incompleto — peça um link novo para quem administra o orçamento.'); return; }
+      try {
+        const res = await fetch(`${supabaseUrl}/rest/v1/rpc/get_reembolsos_publicos`, {
+          method: 'POST',
+          headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ p_token: token }),
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (!data || data.erro) {
+          renderErro(data?.erro === 'link invalido' ? 'Este link não é válido ou foi revogado.' : 'Não há dados disponíveis para este link no momento.');
+          return;
+        }
+        renderDados(data);
+      } catch {
+        if (!content.querySelector('.hero-stat')) renderErro('Não foi possível carregar agora. Tentando de novo em instantes…');
+      }
+    }
+
+    carregar();
+    setInterval(carregar, 30000);
+  </script>
+</body>
+</html>

@@ -256,6 +256,48 @@ export async function pushNow() {
   state.lastSync = new Date();
 }
 
+// ---- Links compartilháveis de reembolso (só-leitura, sem login) ----
+// Requer a tabela/função criadas por supabase/reembolso_links.sql — se ainda não foi
+// rodado no projeto, as chamadas abaixo falham com "relation does not exist".
+function randomToken() {
+  // 2× UUID aleatório (256 bits de entropia) sem hífens: não-adivinhável e amigável em URL.
+  return (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, '');
+}
+
+export async function listShareLinks() {
+  if (!isLoggedIn()) return [];
+  return (await authFetch('/rest/v1/reembolso_links?select=token,pessoa_id,criado_em')) || [];
+}
+
+export async function createShareLink(pessoaId) {
+  if (!isLoggedIn()) throw new Error('Entre na sincronização antes de gerar um link.');
+  const token = randomToken();
+  await authFetch('/rest/v1/reembolso_links', {
+    method: 'POST',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify([{ token, user_id: cfg.session.user.id, pessoa_id: pessoaId }]),
+  });
+  return token;
+}
+
+export async function deleteShareLink(token) {
+  if (!isLoggedIn()) return;
+  await authFetch(`/rest/v1/reembolso_links?token=eq.${encodeURIComponent(token)}`, { method: 'DELETE' });
+}
+
+// Aponta para reembolso.html ao lado da página atual (a troca do nome do arquivo pelo
+// final da URL, e não um "index.html" fixo, evita quebrar quando aberta a partir do
+// HTML standalone, que tem outro nome de arquivo). Leva também o projeto Supabase
+// (url + chave anon) embutido na URL — reembolso.html é uma página independente,
+// aberta pela pessoa que recebe o link (outro navegador/aparelho, sem nenhum dado
+// local em comum), então não tem como descobrir sozinha qual projeto consultar.
+// Mesmo padrão já usado em buildConnectLink() para conectar outro aparelho.
+export function shareLinkUrl(token) {
+  const base = location.href.split('#')[0].replace(/[^/]*$/, '');
+  const params = new URLSearchParams({ token, u: cfg.url, k: cfg.anonKey });
+  return `${base}reembolso.html?${params.toString()}`;
+}
+
 // ---- Mesclagem (merge) ----
 // Nada é apagado por sincronizar: os lançamentos dos dois lados são unidos item a item
 // (cada item tem id único). Para o MESMO item alterado nos dois lados, vence o que tem
