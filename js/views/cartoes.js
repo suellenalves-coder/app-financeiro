@@ -224,6 +224,42 @@ function purchaseCols(ym, rerender, { showCartao = false } = {}) {
 
 const STATUS_PARCELAMENTO = [['em_andamento', 'Em andamento'], ['quitada', 'Quitada']];
 
+// Linhas da fatura de um cartão no mês: parcelas de compras parceladas + despesas avulsas
+// pagas nesse cartão (ex.: abastecimentos) — tudo num só lugar, cada uma com ação de pagar.
+// Compartilhado entre o cabeçalho recolhido (badge + ação rápida) e o corpo expandido (tabela).
+function invoiceLines(inv) {
+  return [
+    ...inv.parcelas.map(p => ({
+      descricao: db.purchases.find(x => x.id === p.purchaseId)?.descricao || '—',
+      categoria: db.purchases.find(x => x.id === p.purchaseId)?.categoria || '—',
+      parcela: `${p.numero}/${p.total}`, valor: p.valor, status: p.status,
+      setStatus: novo => update('installments', p.id, { status: novo }),
+    })),
+    ...inv.despesas.map(e => ({
+      descricao: e.descricao, categoria: e.categoria || '—', parcela: '—',
+      valor: e.valorTotal, status: e.status,
+      setStatus: novo => update('expenses', e.id, { status: novo }),
+    })),
+  ];
+}
+
+// Status da fatura pra badge no cabeçalho recolhido: sem itens no mês, tudo pago, ou
+// (pendente) comparado com a data de vencimento — a vencer ou já vencida.
+function faturaStatus(linhas, ym, diaVencimento) {
+  if (!linhas.length) return 'sem_lancamentos';
+  if (linhas.every(l => l.status === 'pago')) return 'paga';
+  const vencimento = dateInMonth(ym, Number(diaVencimento) || 1);
+  return todayISO() > vencimento ? 'vencida' : 'a_vencer';
+}
+
+// Marca de uma vez todos os itens da fatura do mês como pagos — mesma lógica do botão
+// "Marcar fatura inteira como paga" do cartão expandido, só que acessível sem abrir o cartão.
+function marcarFaturaPaga(linhas, rerender) {
+  for (const l of linhas) l.setStatus('pago');
+  toast('Fatura inteira marcada como paga.');
+  rerender();
+}
+
 export function render(el, rerender) {
   const ym = ui.month;
   ensureReimbursementSync();
@@ -275,6 +311,8 @@ export function render(el, rerender) {
 function renderCartaoCard(c, ym, rerender) {
   const st = getCardUi(c.id);
   const inv = cardInvoice(c.id, ym);
+  const linhasFatura = invoiceLines(inv);
+  const statusFatura = faturaStatus(linhasFatura, ym, c.diaVencimento);
   const pct = c.limitePlanejado > 0 ? inv.total / c.limitePlanejado * 100 : 0;
   const meterColor = pct > 100 ? '#E57373' : pct > 80 ? '#F6C667' : '#7BC99A';
   const nearLimit = c.limitePlanejado > 0 && pct > 80;
@@ -291,6 +329,13 @@ function renderCartaoCard(c, ym, rerender) {
     h('span', { class: 'collapsible-spacer' }),
     h('span', { class: 'collapsible-fatura' }, fmt(inv.total)),
     h('span', { class: 'collapsible-sub' }, `vence dia ${c.diaVencimento || '—'}`),
+    badge(statusFatura),
+    (statusFatura === 'a_vencer' || statusFatura === 'vencida')
+      ? h('button', {
+          class: 'icon-btn icon-btn-lg', title: 'Marcar fatura como paga',
+          onclick: e => { e.stopPropagation(); marcarFaturaPaga(linhasFatura, rerender); },
+        }, '✔️')
+      : null,
     c.limitePlanejado > 0 ? h('div', { class: 'collapsible-meter' },
       h('div', { style: `width:${Math.min(100, pct)}%;background:${meterColor}` })) : null,
     h('div', { class: 'collapsible-actions', onclick: e => e.stopPropagation() },
@@ -319,22 +364,7 @@ function renderCartaoCard(c, ym, rerender) {
 
 function renderCartaoBody(c, ym, rerender, inv, pct, meterColor, st) {
   const doCartao = db.purchases.filter(p => p.cartaoId === c.id);
-
-  // Linhas da fatura do mês: parcelas de compras parceladas + despesas avulsas pagas
-  // neste cartão (ex.: abastecimentos) — tudo num só lugar, cada uma com ação de pagar.
-  const linhas = [
-    ...inv.parcelas.map(p => ({
-      descricao: db.purchases.find(x => x.id === p.purchaseId)?.descricao || '—',
-      categoria: db.purchases.find(x => x.id === p.purchaseId)?.categoria || '—',
-      parcela: `${p.numero}/${p.total}`, valor: p.valor, status: p.status,
-      setStatus: novo => update('installments', p.id, { status: novo }),
-    })),
-    ...inv.despesas.map(e => ({
-      descricao: e.descricao, categoria: e.categoria || '—', parcela: '—',
-      valor: e.valorTotal, status: e.status,
-      setStatus: novo => update('expenses', e.id, { status: novo }),
-    })),
-  ];
+  const linhas = invoiceLines(inv);
   const todasPagas = linhas.length > 0 && linhas.every(l => l.status === 'pago');
 
   const tabs = h('div', { class: 'tabs' },

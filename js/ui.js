@@ -197,11 +197,12 @@ export function searchableTable(rows, cols, filtroState, { searchKeys = [], stat
 
 // ---- Badges de status ----
 const BADGE_STYLES = {
-  pago: 'ok', recebida: 'ok', concluida: 'ok', ativa: 'ok', quitada: 'ok',
-  vencido: 'bad', atrasada: 'bad', atrasado: 'bad', contestado: 'bad',
-  parcial: 'warn', solicitado: 'info',
+  pago: 'ok', recebida: 'ok', concluida: 'ok', ativa: 'ok', quitada: 'ok', paga: 'ok',
+  vencido: 'bad', atrasada: 'bad', atrasado: 'bad', contestado: 'bad', vencida: 'bad',
+  parcial: 'warn', solicitado: 'info', a_vencer: 'warn',
   previsto: 'muted', prevista: 'muted', pendente: 'warn', em_andamento: 'muted',
   cancelado: 'muted', cancelada: 'muted', pausada: 'muted', reembolsado: 'info',
+  sem_lancamentos: 'muted',
 };
 const BADGE_LABELS = {
   pago: 'Pago', recebida: 'Recebida', previsto: 'Previsto', prevista: 'Prevista',
@@ -209,6 +210,7 @@ const BADGE_LABELS = {
   cancelada: 'Cancelada', parcial: 'Parcial', pendente: 'Pendente', solicitado: 'Solicitado',
   contestado: 'Contestado', reembolsado: 'Reembolsado', ativa: 'Ativa', pausada: 'Pausada',
   concluida: 'Concluída', quitada: 'Quitada', em_andamento: 'Em andamento',
+  paga: 'Paga', vencida: 'Vencida', a_vencer: 'A vencer', sem_lancamentos: 'Sem lançamentos',
 };
 export function badge(status) {
   return h('span', { class: `badge badge-${BADGE_STYLES[status] || 'muted'}` }, BADGE_LABELS[status] || status || '—');
