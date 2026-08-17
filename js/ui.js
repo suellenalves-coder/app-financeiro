@@ -231,6 +231,17 @@ export function card(title, ...children) {
     title ? h('h2', { class: 'card-title' }, title) : null, ...children);
 }
 
+// ---- Bloco colapsável de alto nível (ex.: seções do Dashboard) ----
+// Diferente de card(): agrupa vários cards/gráficos sob um título com peso visual maior,
+// com opção de recolher a seção inteira. Aberta por padrão.
+export function section(icon, title, ...children) {
+  return h('details', { class: 'dash-section', open: true },
+    h('summary', { class: 'dash-section-head' },
+      h('span', { class: 'dash-section-icon' }, icon),
+      h('span', { class: 'dash-section-title' }, title)),
+    h('div', { class: 'dash-section-body' }, ...children));
+}
+
 export function alertBanner(alerts) {
   if (!alerts.length) return null;
   return h('div', { class: 'alerts' }, alerts.map(a =>

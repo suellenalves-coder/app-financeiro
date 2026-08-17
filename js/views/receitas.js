@@ -3,6 +3,7 @@ import { h, fmt, todayISO, sum } from '../utils.js';
 import { db, ui, add, update, remove, save, TIPOS_RECEITA, STATUS_RECEITA } from '../store.js';
 import { monthIncomes } from '../calc.js';
 import { card, table, badge, formModal, confirmModal, rowActions, statCard, toast } from '../ui.js';
+import { contaLabel } from './contas.js';
 
 const TIPO_LABEL = Object.fromEntries(TIPOS_RECEITA);
 
@@ -15,6 +16,8 @@ function fields(vals = {}) {
     { k: 'tipo', label: 'Tipo de receita', type: 'select', options: TIPOS_RECEITA, required: true, value: 'segura',
       help: 'Reembolsos devem ser registrados na tela Reembolsos, vinculados à despesa original.' },
     { k: 'status', label: 'Status', type: 'select', options: STATUS_RECEITA, required: true, value: 'prevista' },
+    { k: 'contaId', label: 'Conta bancária', type: 'select', options: db.accounts.map(a => [a.id, contaLabel(a)]),
+      help: db.accounts.length ? 'Ao marcar como recebida, o valor é somado automaticamente ao saldo desta conta.' : 'Cadastre contas em Contas bancárias.' },
     { k: 'recorrente', label: 'Receita recorrente (repete todo mês)', type: 'check' },
     { k: 'obs', label: 'Observações', type: 'textarea', full: true },
   ];

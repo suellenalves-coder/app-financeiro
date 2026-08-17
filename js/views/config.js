@@ -34,6 +34,32 @@ export function render(el, rerender) {
         }, right: true },
     ], metas)));
 
+  // ---- Orçamento por categoria ----
+  el.append(card(null,
+    h('h2', { class: 'card-title' }, '📐 Orçamento por categoria'),
+    h('p', { class: 'stat-sub' }, 'Defina um limite mensal para as categorias que você quer acompanhar de perto. O Dashboard mostra o progresso de cada uma e destaca em vermelho quem ultrapassou.'),
+    table([
+      { label: 'Categoria', k: 'nome' },
+      { label: 'Limite mensal', render: c => {
+          const b = db.categoryBudgets.find(x => x.categoria === c.nome);
+          return b && Number(b.limiteMensal) > 0 ? fmt(Number(b.limiteMensal)) : '—';
+        }, right: true },
+      { label: '', render: c => {
+          const b = db.categoryBudgets.find(x => x.categoria === c.nome);
+          const editar = ['✏️', () => formModal(`Limite mensal — ${c.nome}`,
+            [{ k: 'limiteMensal', label: 'Limite mensal (R$)', type: 'money', required: true }],
+            { limiteMensal: b ? Number(b.limiteMensal) : 0 },
+            vals => {
+              if (b) update('categoryBudgets', b.id, vals);
+              else add('categoryBudgets', { categoria: c.nome, ...vals });
+              rerender();
+            }), b ? 'Editar limite' : 'Definir limite'];
+          const btns = [editar];
+          if (b) btns.push(['🗑', () => confirmModal(`Remover o limite de ${c.nome}?`, () => { remove('categoryBudgets', b.id); rerender(); }), 'Remover limite']);
+          return rowActions(...btns);
+        }, right: true },
+    ], db.categoriesExpense)));
+
   // ---- Pessoas para reembolso ----
   const pessoaFields = [
     { k: 'nome', label: 'Nome', type: 'text', required: true },

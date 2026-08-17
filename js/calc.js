@@ -138,6 +138,30 @@ export function monthInvestRedemptions(ym) {
   return db.investRedemptions.filter(r => ymOf(r.data) === ym);
 }
 
+// ---- Contas bancárias ----
+// Saldo sempre calculado ao vivo a partir do saldo inicial + receitas recebidas +
+// despesas pagas vinculadas à conta + conciliações manuais — nunca um campo solto que
+// possa dessincronizar (edição/duplicação/exclusão de lançamentos refletem na hora).
+export function accountBalance(contaId) {
+  const conta = db.accounts.find(a => a.id === contaId);
+  if (!conta) return 0;
+  const recebido = sum(db.incomes.filter(i => i.contaId === contaId && i.status === 'recebida'), i => i.valor);
+  const pago = sum(db.expenses.filter(e => e.contaId === contaId && e.status === 'pago'), e => e.valorTotal);
+  const ajustes = sum(db.accountAdjustments.filter(a => a.contaId === contaId), a => a.valor);
+  return (Number(conta.saldoInicial) || 0) + recebido - pago + ajustes;
+}
+
+// ---- Orçamento por categoria ----
+// As 3 categorias que mais pesaram no mês, comparadas ao mês anterior.
+export function topCategoriesComparison(ym) {
+  const anterior = Object.fromEntries(expensesByCategory(ymAdd(ym, -1)));
+  return expensesByCategory(ym).slice(0, 3).map(([categoria, valor]) => ({
+    categoria, valor,
+    valorAnterior: anterior[categoria] || 0,
+    delta: valor - (anterior[categoria] || 0),
+  }));
+}
+
 // ---- Reembolsos ----
 export function reimbPending(r) {
   return Math.max(0, (Number(r.valorAReembolsar) || 0) - (Number(r.valorRecebido) || 0));

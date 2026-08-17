@@ -84,7 +84,10 @@ function defaults() {
     banks: ['XP', 'Santander', 'Banco do Brasil', 'C6'].map(nome => ({ id: uid(), nome })),
     categoriesExpense: CATEGORIAS_DESPESA.map(nome => ({ id: uid(), nome, sub: [] })),
     categoriesIncome: CATEGORIAS_RECEITA.map(nome => ({ id: uid(), nome })),
+    categoryBudgets: [], // limites mensais por categoria de despesa: { id, categoria, limiteMensal }
     people: [],
+    accounts: [], // contas bancárias: { id, banco, apelido, saldoInicial, ativo }
+    accountAdjustments: [], // conciliações manuais de saldo: { id, contaId, data, valor (delta com sinal), obs }
     cards: [],
     incomes: [],
     expenses: [],

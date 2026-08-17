@@ -103,6 +103,28 @@ input, select, textarea { font: inherit; color: var(--ink); }
 
 .badge-limite { display: inline-flex; align-items: center; gap: 4px; }
 
+/* ---- Seções colapsáveis de alto nível (ex.: blocos do Dashboard) ---- */
+.dash-section { margin-bottom: 22px; }
+.dash-section-head {
+  display: flex; align-items: center; gap: 9px; cursor: pointer; list-style: none;
+  padding-bottom: 10px; margin-bottom: 16px; border-bottom: 2px solid var(--border);
+  font-size: 17px; font-weight: 700; color: var(--ink);
+}
+.dash-section-head::-webkit-details-marker { display: none; }
+.dash-section-head::after { content: '▾'; margin-left: auto; color: var(--ink-2); font-size: 13px; }
+.dash-section:not([open]) .dash-section-head::after { content: '▸'; }
+.dash-section-icon { font-size: 19px; }
+.dash-section-body > *:last-child { margin-bottom: 0; }
+
+/* ---- Barra de progresso de orçamento por categoria ---- */
+.budget-row { margin-bottom: 14px; }
+.budget-row:last-child { margin-bottom: 0; }
+.budget-row-head { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; margin-bottom: 5px; }
+.budget-row-head .cat-name { font-weight: 600; }
+.budget-over-text { color: var(--erro); font-weight: 700; }
+.budget-meter { height: 9px; border-radius: 999px; background: var(--cinza-gelo); overflow: hidden; }
+.budget-meter > div { height: 100%; border-radius: 999px; }
+
 /* ---- Ícones com área de toque maior (ex.: ações do cartão) ---- */
 .icon-btn-lg { padding: 8px 10px; font-size: 17px; border-radius: 10px; }
 .icon-btn-lg:hover { background: var(--cinza-gelo); }

@@ -6,6 +6,7 @@ import {
 } from '../store.js';
 import { monthExpenses, expenseNet } from '../calc.js';
 import { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } from '../ui.js';
+import { contaLabel } from './contas.js';
 
 // Recalcula o valor a reembolsar (R$) a partir do percentual × valor total — usado nos
 // onchange de valorTotal, reembolsavel e percentualReembolso, pra manter os três em sincronia.
@@ -36,6 +37,9 @@ export function fields(vals = {}) {
     { k: 'banco', label: 'Banco', type: 'select', options: db.banks.map(b => b.nome) },
     { k: 'cartaoId', label: 'Cartão', type: 'select', options: db.cards.map(c => [c.id, c.nome]),
       show: v => v.formaPagamento === 'Cartão de crédito' },
+    { k: 'contaId', label: 'Conta bancária', type: 'select', options: db.accounts.map(a => [a.id, contaLabel(a)]),
+      show: v => v.formaPagamento !== 'Cartão de crédito',
+      help: db.accounts.length ? 'Ao marcar como paga, o valor é descontado automaticamente do saldo desta conta.' : 'Cadastre contas em Contas bancárias.' },
     { k: 'natureza', label: 'Natureza', type: 'select', options: [['fixa', 'Fixa'], ['variavel', 'Variável']], value: 'variavel', required: true },
     { k: 'tipo', label: 'Classificação estratégica', type: 'select', options: CLASSIFICACAO_DESPESA },
     { k: 'status', label: 'Status de pagamento', type: 'select', options: STATUS_DESPESA, value: 'previsto', required: true },

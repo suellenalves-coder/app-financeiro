@@ -112,6 +112,28 @@ input, select, textarea { font: inherit; color: var(--ink); }
 
 .badge-limite { display: inline-flex; align-items: center; gap: 4px; }
 
+/* ---- Seções colapsáveis de alto nível (ex.: blocos do Dashboard) ---- */
+.dash-section { margin-bottom: 22px; }
+.dash-section-head {
+  display: flex; align-items: center; gap: 9px; cursor: pointer; list-style: none;
+  padding-bottom: 10px; margin-bottom: 16px; border-bottom: 2px solid var(--border);
+  font-size: 17px; font-weight: 700; color: var(--ink);
+}
+.dash-section-head::-webkit-details-marker { display: none; }
+.dash-section-head::after { content: '▾'; margin-left: auto; color: var(--ink-2); font-size: 13px; }
+.dash-section:not([open]) .dash-section-head::after { content: '▸'; }
+.dash-section-icon { font-size: 19px; }
+.dash-section-body > *:last-child { margin-bottom: 0; }
+
+/* ---- Barra de progresso de orçamento por categoria ---- */
+.budget-row { margin-bottom: 14px; }
+.budget-row:last-child { margin-bottom: 0; }
+.budget-row-head { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; margin-bottom: 5px; }
+.budget-row-head .cat-name { font-weight: 600; }
+.budget-over-text { color: var(--erro); font-weight: 700; }
+.budget-meter { height: 9px; border-radius: 999px; background: var(--cinza-gelo); overflow: hidden; }
+.budget-meter > div { height: 100%; border-radius: 999px; }
+
 /* ---- Ícones com área de toque maior (ex.: ações do cartão) ---- */
 .icon-btn-lg { padding: 8px 10px; font-size: 17px; border-radius: 10px; }
 .icon-btn-lg:hover { background: var(--cinza-gelo); }
@@ -642,7 +664,10 @@ function defaults() {
     banks: ['XP', 'Santander', 'Banco do Brasil', 'C6'].map(nome => ({ id: uid(), nome })),
     categoriesExpense: CATEGORIAS_DESPESA.map(nome => ({ id: uid(), nome, sub: [] })),
     categoriesIncome: CATEGORIAS_RECEITA.map(nome => ({ id: uid(), nome })),
+    categoryBudgets: [], // limites mensais por categoria de despesa: { id, categoria, limiteMensal }
     people: [],
+    accounts: [], // contas bancárias: { id, banco, apelido, saldoInicial, ativo }
+    accountAdjustments: [], // conciliações manuais de saldo: { id, contaId, data, valor (delta com sinal), obs }
     cards: [],
     incomes: [],
     expenses: [],
@@ -1383,6 +1408,30 @@ function monthInvestRedemptions(ym) {
   return db.investRedemptions.filter(r => ymOf(r.data) === ym);
 }
 
+// ---- Contas bancárias ----
+// Saldo sempre calculado ao vivo a partir do saldo inicial + receitas recebidas +
+// despesas pagas vinculadas à conta + conciliações manuais — nunca um campo solto que
+// possa dessincronizar (edição/duplicação/exclusão de lançamentos refletem na hora).
+function accountBalance(contaId) {
+  const conta = db.accounts.find(a => a.id === contaId);
+  if (!conta) return 0;
+  const recebido = sum(db.incomes.filter(i => i.contaId === contaId && i.status === 'recebida'), i => i.valor);
+  const pago = sum(db.expenses.filter(e => e.contaId === contaId && e.status === 'pago'), e => e.valorTotal);
+  const ajustes = sum(db.accountAdjustments.filter(a => a.contaId === contaId), a => a.valor);
+  return (Number(conta.saldoInicial) || 0) + recebido - pago + ajustes;
+}
+
+// ---- Orçamento por categoria ----
+// As 3 categorias que mais pesaram no mês, comparadas ao mês anterior.
+function topCategoriesComparison(ym) {
+  const anterior = Object.fromEntries(expensesByCategory(ymAdd(ym, -1)));
+  return expensesByCategory(ym).slice(0, 3).map(([categoria, valor]) => ({
+    categoria, valor,
+    valorAnterior: anterior[categoria] || 0,
+    delta: valor - (anterior[categoria] || 0),
+  }));
+}
+
 // ---- Reembolsos ----
 function reimbPending(r) {
   return Math.max(0, (Number(r.valorAReembolsar) || 0) - (Number(r.valorRecebido) || 0));
@@ -1620,7 +1669,7 @@ function carFuelStats(meses) {
   };
 }
 
-return { monthIncomes, monthExpenses, expenseNet, recurringOccurrences, monthInstallments, installmentNet, futureInstallmentsTotal, cardInvoice, provisionMonthly, monthProvisions, monthProvisionDeposits, monthInvestPlanned, monthInvestDone, totalInvested, reserveTotal, monthInvestRedemptions, reimbPending, reimbMonth, reimbOutstanding, monthReimbursements, monthSummary, commitmentBreakdown, expensesByCategory, annualRows, alertsFor, simulatePurchase, carFuelStats };
+return { monthIncomes, monthExpenses, expenseNet, recurringOccurrences, monthInstallments, installmentNet, futureInstallmentsTotal, cardInvoice, provisionMonthly, monthProvisions, monthProvisionDeposits, monthInvestPlanned, monthInvestDone, totalInvested, reserveTotal, monthInvestRedemptions, accountBalance, topCategoriesComparison, reimbPending, reimbMonth, reimbOutstanding, monthReimbursements, monthSummary, commitmentBreakdown, expensesByCategory, annualRows, alertsFor, simulatePurchase, carFuelStats };
 })();
 
 __m['charts'] = (() => {
@@ -2073,6 +2122,17 @@ function card(title, ...children) {
     title ? h('h2', { class: 'card-title' }, title) : null, ...children);
 }
 
+// ---- Bloco colapsável de alto nível (ex.: seções do Dashboard) ----
+// Diferente de card(): agrupa vários cards/gráficos sob um título com peso visual maior,
+// com opção de recolher a seção inteira. Aberta por padrão.
+function section(icon, title, ...children) {
+  return h('details', { class: 'dash-section', open: true },
+    h('summary', { class: 'dash-section-head' },
+      h('span', { class: 'dash-section-icon' }, icon),
+      h('span', { class: 'dash-section-title' }, title)),
+    h('div', { class: 'dash-section-body' }, ...children));
+}
+
 function alertBanner(alerts) {
   if (!alerts.length) return null;
   return h('div', { class: 'alerts' }, alerts.map(a =>
@@ -2095,77 +2155,214 @@ function rowActions(...btns) {
     h('button', { class: 'icon-btn', title: title || label, onclick: fn }, label)));
 }
 
-return { modal, formModal, confirmModal, table, searchableTable, badge, statCard, card, alertBanner, toast, rowActions };
+return { modal, formModal, confirmModal, table, searchableTable, badge, statCard, card, section, alertBanner, toast, rowActions };
+})();
+
+__m['contas'] = (() => {
+// Contas bancárias: cadastro simples e saldo sempre calculado ao vivo (saldo inicial +
+// receitas recebidas + despesas pagas vinculadas + conciliações manuais).
+const { h, fmt, todayISO } = __m['utils'];
+const { db, add, update, remove } = __m['store'];
+const { accountBalance } = __m['calc'];
+const { card, table, formModal, confirmModal, rowActions, statCard, toast } = __m['ui'];
+
+// Nome de exibição de uma conta: "Apelido — Banco" (ou só o banco, se não tiver apelido).
+function contaLabel(a) {
+  return a.apelido ? `${a.apelido} — ${a.banco}` : a.banco;
+}
+
+function fields(vals = {}) {
+  return [
+    { k: 'banco', label: 'Banco', type: 'select', options: db.banks.map(b => b.nome), required: true,
+      help: db.banks.length ? '' : 'Cadastre bancos em Configurações.' },
+    { k: 'apelido', label: 'Apelido da conta', type: 'text', placeholder: 'Ex.: Conta corrente, Conta salário…' },
+    { k: 'saldoInicial', label: 'Saldo inicial (R$)', type: 'money', required: true, value: 0,
+      help: 'A partir daqui o saldo atual é calculado sozinho, conforme você marca receitas/despesas como recebidas/pagas nesta conta.' },
+  ];
+}
+
+function conciliarModal(conta, rerender) {
+  const atual = accountBalance(conta.id);
+  const overlay = formModal(`Conciliar saldo — ${contaLabel(conta)}`, [
+    { k: 'saldoReal', label: 'Saldo real (conforme o extrato do banco)', type: 'money', required: true, value: atual,
+      help: `Saldo calculado pelo app hoje: ${fmt(atual)}.` },
+    { k: 'obs', label: 'Observações', type: 'text' },
+  ], {}, vals => {
+    const diff = +(Number(vals.saldoReal) - atual).toFixed(2);
+    if (Math.abs(diff) < 0.005) { toast('Já está batendo com o calculado — nenhum ajuste necessário.'); return; }
+    add('accountAdjustments', { contaId: conta.id, data: todayISO(), valor: diff, obs: vals.obs || 'Conciliação manual' });
+    toast(`Ajuste de ${fmt(diff)} registrado para bater com o extrato.`);
+    rerender();
+  }, { saveLabel: 'Conciliar' });
+  return overlay;
+}
+
+function render(el, rerender) {
+  el.append(card(null,
+    h('div', { class: 'card-head' },
+      h('h2', { class: 'card-title' }, 'Contas bancárias'),
+      h('button', {
+        class: 'btn btn-primary btn-sm',
+        onclick: () => formModal('Nova conta', fields(), {}, vals => { add('accounts', { ...vals, ativo: true }); toast('Conta cadastrada.'); rerender(); }),
+      }, '+ Nova conta')),
+    h('p', { class: 'stat-sub' },
+      'O saldo atual é sempre calculado a partir do saldo inicial, das receitas marcadas como recebidas e das despesas marcadas como pagas vinculadas a cada conta. Use "Conciliar saldo" quando o valor calculado não bater com o extrato real do banco.'),
+    !db.accounts.length ? h('div', { class: 'empty-state' }, 'Nenhuma conta cadastrada ainda.') : h('div', { class: 'grid grid-cards' },
+      db.accounts.map(a => statCard(contaLabel(a), accountBalance(a.id), {
+        tone: accountBalance(a.id) < 0 ? 'tone-bad' : 'tone-ok',
+        sub: `saldo inicial: ${fmt(a.saldoInicial)}`,
+      })))));
+
+  if (db.accounts.length) {
+    el.append(card('Gerenciar contas',
+      table([
+        { label: 'Banco', k: 'banco' },
+        { label: 'Apelido', render: a => a.apelido || '—' },
+        { label: 'Saldo inicial', k: 'saldoInicial', money: true },
+        { label: 'Saldo atual', render: a => fmt(accountBalance(a.id)), right: true },
+        { label: '', render: a => rowActions(
+            ['🎯', () => conciliarModal(a, rerender), 'Conciliar saldo'],
+            ['✏️', () => formModal('Editar conta', fields(a), a, vals => { update('accounts', a.id, vals); rerender(); }), 'Editar'],
+            ['🗑', () => confirmModal(`Excluir a conta "${contaLabel(a)}"? Receitas e despesas já vinculadas mantêm o valor, mas perdem o vínculo com a conta.`, () => {
+              remove('accounts', a.id);
+              rerender();
+            }), 'Excluir']), right: true },
+      ], db.accounts)));
+  }
+}
+
+return { contaLabel, render };
 })();
 
 __m['dashboard'] = (() => {
-// Dashboard mensal: visão consolidada, comprometimento da renda e alertas.
+// Dashboard mensal: visão consolidada agrupada em blocos com hierarquia visual clara,
+// em vez de uma lista longa de cards soltos.
 const { h, fmt, fmtPct, ymAdd, ymShort } = __m['utils'];
 const { ui, db } = __m['store'];
-const { monthSummary, commitmentBreakdown, expensesByCategory, alertsFor, futureInstallmentsTotal, monthSummary: ms } = __m['calc'];
-const { statCard, card, alertBanner } = __m['ui'];
-const { donut, hstack, lines, bars, CHART_COLORS, CHART_MUTED } = __m['charts'];
+const { monthSummary, commitmentBreakdown, expensesByCategory, alertsFor, futureInstallmentsTotal, accountBalance, topCategoriesComparison, monthSummary: ms, } = __m['calc'];
+const { statCard, card, section, alertBanner, table } = __m['ui'];
+const { donut, hstack, lines, bars, CHART_COLORS } = __m['charts'];
+const { contaLabel } = __m['contas'];
 
 function render(el) {
   const ym = ui.month;
   const s = monthSummary(ym);
   const alerts = alertsFor(ym);
+  const tone = v => v < 0 ? 'tone-bad' : 'tone-ok';
 
   el.append(alertBanner(alerts) || '');
 
-  const tone = v => v < 0 ? 'tone-bad' : 'tone-ok';
-  el.append(h('div', { class: 'grid grid-cards' },
-    statCard('Receita total do mês', s.receitaTotal),
-    statCard('Receita segura', s.receitaSegura, { sub: 'salário e rendas garantidas' }),
-    statCard('Receita variável', s.receitaVariavel),
-    statCard('Despesas totais', s.despesasTotais),
-    statCard('Despesas fixas', s.despesasFixas, { sub: 'inclui contas recorrentes' }),
-    statCard('Despesas variáveis', s.despVariaveis),
-    statCard('Parcelamentos do mês', s.parcelamentos, { onclick: () => location.hash = '#/cartoes' }),
-    statCard('Provisões do mês', s.provisoes, { onclick: () => location.hash = '#/provisoes' }),
-    statCard('Investimentos do mês', s.investimentos, { sub: `realizado: ${fmt(s.investRealizado)}`, onclick: () => location.hash = '#/investimentos' }),
-    statCard('Reembolsos a receber', s.reembolsosAReceber, { tone: s.reembolsosAReceber > 0 ? 'tone-warn' : '', onclick: () => location.hash = '#/reembolsos' }),
-    statCard('Saldo previsto', s.saldoPrevisto, { tone: tone(s.saldoPrevisto) }),
-    statCard('Saldo livre real', s.saldoLivreReal, { tone: tone(s.saldoLivreReal), sub: 'livre de verdade para gastar' }),
-    statCard('Renda comprometida', fmtPct(s.comprometimento), {
-      tone: s.comprometimento > 85 ? 'tone-bad' : s.comprometimento > 70 ? 'tone-warn' : 'tone-ok',
-    })));
+  // ---- Minhas Contas ----
+  el.append(section('🏛️', 'Minhas Contas',
+    !db.accounts.length
+      ? h('div', { class: 'empty-state' }, 'Nenhuma conta cadastrada. ',
+          h('a', { href: '#/contas' }, 'Cadastre suas contas bancárias'), ' para acompanhar o saldo real aqui.')
+      : h('div', { class: 'grid grid-cards' },
+          db.accounts.map(a => statCard(contaLabel(a), accountBalance(a.id), {
+            tone: accountBalance(a.id) < 0 ? 'tone-bad' : 'tone-ok',
+            onclick: () => location.hash = '#/contas',
+          })))));
 
-  // Comprometimento da renda
+  // ---- Visão geral do mês ----
+  el.append(section('📊', 'Visão geral do mês',
+    h('div', { class: 'grid grid-cards' },
+      statCard('Receita total do mês', s.receitaTotal),
+      statCard('Receita segura', s.receitaSegura, { sub: 'salário e rendas garantidas' }),
+      statCard('Receita variável', s.receitaVariavel),
+      statCard('Despesas totais', s.despesasTotais),
+      statCard('Despesas fixas', s.despesasFixas, { sub: 'inclui contas recorrentes' }),
+      statCard('Despesas variáveis', s.despVariaveis),
+      statCard('Saldo previsto', s.saldoPrevisto, { tone: tone(s.saldoPrevisto) }),
+      statCard('Saldo livre real', s.saldoLivreReal, { tone: tone(s.saldoLivreReal), sub: 'livre de verdade para gastar' }),
+      statCard('Renda comprometida', fmtPct(s.comprometimento), {
+        tone: s.comprometimento > 85 ? 'tone-bad' : s.comprometimento > 70 ? 'tone-warn' : 'tone-ok',
+      }))));
+
+  // ---- Comprometimento e dívidas ----
   const bd = commitmentBreakdown(ym);
   const colors = [CHART_COLORS[1], CHART_COLORS[2], CHART_COLORS[4], CHART_COLORS[3], CHART_COLORS[0], '#D8E2DC'];
   const meterColor = s.comprometimento > 85 ? '#E57373' : s.comprometimento > 70 ? '#F6C667' : '#7BC99A';
-  el.append(card('Comprometimento da renda segura',
-    h('div', { class: 'commit-meter' },
-      h('div', { style: `width:${Math.min(100, s.comprometimento)}%;background:${meterColor}` })),
-    h('div', { class: 'stat-sub', style: 'margin-bottom:10px' },
-      s.receitaSegura > 0
-        ? `${fmtPct(s.comprometimento)} da renda segura já está comprometida. Saldo livre real: ${fmt(s.saldoLivreReal)}.`
-        : 'Cadastre sua receita segura para acompanhar o comprometimento.'),
-    bd.receitaSegura > 0 ? hstack(bd.partes.map(([l, v], i) => [l, v, colors[i]]), bd.receitaSegura) : null));
+  el.append(section('⚖️', 'Comprometimento e dívidas',
+    h('div', { class: 'grid grid-cards' },
+      statCard('Parcelamentos do mês', s.parcelamentos, { onclick: () => location.hash = '#/cartoes' }),
+      statCard('Parcelamentos futuros já comprometidos', futureInstallmentsTotal(ym),
+        { sub: 'a partir do mês seguinte', onclick: () => location.hash = '#/cartoes' })),
+    card('Comprometimento da renda segura',
+      h('div', { class: 'commit-meter' },
+        h('div', { style: `width:${Math.min(100, s.comprometimento)}%;background:${meterColor}` })),
+      h('div', { class: 'stat-sub', style: 'margin-bottom:10px' },
+        s.receitaSegura > 0
+          ? `${fmtPct(s.comprometimento)} da renda segura já está comprometida. Saldo livre real: ${fmt(s.saldoLivreReal)}.`
+          : 'Cadastre sua receita segura para acompanhar o comprometimento.'),
+      bd.receitaSegura > 0 ? hstack(bd.partes.map(([l, v], i) => [l, v, colors[i]]), bd.receitaSegura) : null)));
 
-  // Gráficos lado a lado
+  // ---- Gastos ----
   const cats = expensesByCategory(ym);
-  el.append(h('div', { class: 'grid grid-2' },
-    card('Despesas por categoria', donut(cats)),
-    card('Fixas × variáveis × parcelas',
-      bars([ymShort(ym)], [
-        { name: 'Fixas', color: CHART_COLORS[0], values: [s.despesasFixas] },
-        { name: 'Variáveis', color: CHART_COLORS[1], values: [s.despVariaveis] },
-        { name: 'Parcelas', color: CHART_COLORS[2], values: [s.parcelamentos] },
-      ], { height: 200 }))));
-
-  // Evolução do saldo livre (6 meses atrás + 6 à frente)
   const months = Array.from({ length: 13 }, (_, i) => ymAdd(ym, i - 6));
-  el.append(card('Evolução do saldo livre real (projeção inclui parcelas futuras)',
-    lines(months.map(ymShort), [
-      { name: 'Saldo livre real', color: CHART_COLORS[0], values: months.map(m => ms(m).saldoLivreReal) },
-    ], { height: 210 })));
+  el.append(section('🛍️', 'Gastos',
+    h('div', { class: 'grid grid-2' },
+      card('Despesas por categoria', donut(cats)),
+      card('Fixas × variáveis × parcelas',
+        bars([ymShort(ym)], [
+          { name: 'Fixas', color: CHART_COLORS[0], values: [s.despesasFixas] },
+          { name: 'Variáveis', color: CHART_COLORS[1], values: [s.despVariaveis] },
+          { name: 'Parcelas', color: CHART_COLORS[2], values: [s.parcelamentos] },
+        ], { height: 200 }))),
+    card('Evolução do saldo livre real (projeção inclui parcelas futuras)',
+      lines(months.map(ymShort), [
+        { name: 'Saldo livre real', color: CHART_COLORS[0], values: months.map(m => ms(m).saldoLivreReal) },
+      ], { height: 210 })),
+    budgetCard(ym, cats),
+    topCategoriesCard(ym)));
 
-  el.append(h('div', { class: 'grid grid-cards' },
-    statCard('Parcelamentos futuros já comprometidos', futureInstallmentsTotal(ym),
-      { sub: 'a partir do mês seguinte', onclick: () => location.hash = '#/cartoes' }),
-    statCard('Contas recorrentes do mês', s.recorrentes, { onclick: () => location.hash = '#/recorrentes' })));
+  // ---- A receber e investir ----
+  el.append(section('💰', 'A receber e investir',
+    h('div', { class: 'grid grid-cards' },
+      statCard('Reembolsos a receber', s.reembolsosAReceber, { tone: s.reembolsosAReceber > 0 ? 'tone-warn' : '', onclick: () => location.hash = '#/reembolsos' }),
+      statCard('Investimentos do mês', s.investimentos, { sub: `realizado: ${fmt(s.investRealizado)}`, onclick: () => location.hash = '#/investimentos' }),
+      statCard('Provisões do mês', s.provisoes, { onclick: () => location.hash = '#/provisoes' }),
+      statCard('Contas recorrentes do mês', s.recorrentes, { onclick: () => location.hash = '#/recorrentes' }))));
+}
+
+// Barra de progresso (gasto atual / limite definido) por categoria com orçamento configurado.
+function budgetCard(ym, cats) {
+  const gastoPorCategoria = Object.fromEntries(cats);
+  const rows = db.categoryBudgets
+    .filter(b => Number(b.limiteMensal) > 0)
+    .map(b => ({ categoria: b.categoria, gasto: gastoPorCategoria[b.categoria] || 0, limite: Number(b.limiteMensal) }))
+    .sort((a, b) => (b.gasto / b.limite) - (a.gasto / a.limite));
+
+  if (!rows.length) {
+    return card('Orçamento por categoria',
+      h('p', { class: 'stat-sub' }, 'Nenhum limite definido ainda. ',
+        h('a', { href: '#/config' }, 'Defina limites mensais por categoria em Configurações'), ' para acompanhar aqui.'));
+  }
+  return card('Orçamento por categoria',
+    rows.map(r => {
+      const pct = r.limite > 0 ? r.gasto / r.limite * 100 : 0;
+      const over = pct > 100;
+      const color = over ? '#E57373' : pct > 80 ? '#F6C667' : '#7BC99A';
+      return h('div', { class: 'budget-row' },
+        h('div', { class: 'budget-row-head' },
+          h('span', { class: 'cat-name' }, r.categoria),
+          h('span', { class: over ? 'budget-over-text' : '' }, `${fmt(r.gasto)} / ${fmt(r.limite)}`)),
+        h('div', { class: 'budget-meter' }, h('div', { style: `width:${Math.min(100, pct)}%;background:${color}` })));
+    }));
+}
+
+// As 3 categorias que mais pesaram no mês, comparadas ao mês anterior.
+function topCategoriesCard(ym) {
+  const top = topCategoriesComparison(ym);
+  if (!top.length) return null;
+  return card('Top 3 categorias do mês',
+    table([
+      { label: 'Categoria', k: 'categoria' },
+      { label: 'Este mês', render: r => fmt(r.valor), right: true },
+      { label: 'Mês anterior', render: r => fmt(r.valorAnterior), right: true },
+      { label: 'Variação', render: r => h('span', {
+          style: `color:${r.delta > 0 ? '#C0504D' : r.delta < 0 ? '#2E7D53' : 'inherit'};font-weight:600`,
+        }, `${r.delta > 0 ? '▲' : r.delta < 0 ? '▼' : '—'} ${fmt(Math.abs(r.delta))}`), right: true },
+    ], top));
 }
 
 return { render };
@@ -2251,6 +2448,7 @@ const { h, fmt, todayISO, sum } = __m['utils'];
 const { db, ui, add, update, remove, save, TIPOS_RECEITA, STATUS_RECEITA } = __m['store'];
 const { monthIncomes } = __m['calc'];
 const { card, table, badge, formModal, confirmModal, rowActions, statCard, toast } = __m['ui'];
+const { contaLabel } = __m['contas'];
 
 const TIPO_LABEL = Object.fromEntries(TIPOS_RECEITA);
 
@@ -2263,6 +2461,8 @@ function fields(vals = {}) {
     { k: 'tipo', label: 'Tipo de receita', type: 'select', options: TIPOS_RECEITA, required: true, value: 'segura',
       help: 'Reembolsos devem ser registrados na tela Reembolsos, vinculados à despesa original.' },
     { k: 'status', label: 'Status', type: 'select', options: STATUS_RECEITA, required: true, value: 'prevista' },
+    { k: 'contaId', label: 'Conta bancária', type: 'select', options: db.accounts.map(a => [a.id, contaLabel(a)]),
+      help: db.accounts.length ? 'Ao marcar como recebida, o valor é somado automaticamente ao saldo desta conta.' : 'Cadastre contas em Contas bancárias.' },
     { k: 'recorrente', label: 'Receita recorrente (repete todo mês)', type: 'check' },
     { k: 'obs', label: 'Observações', type: 'textarea', full: true },
   ];
@@ -2355,6 +2555,7 @@ const { h, fmt, todayISO, parseDate, parseTable, parseMoney, sum, uid } = __m['u
 const { db, ui, add, update, remove, removeWhere, save, applyRules, CLASSIFICACAO_DESPESA, STATUS_DESPESA, FORMAS_PAGAMENTO, } = __m['store'];
 const { monthExpenses, expenseNet } = __m['calc'];
 const { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } = __m['ui'];
+const { contaLabel } = __m['contas'];
 
 // Recalcula o valor a reembolsar (R$) a partir do percentual × valor total — usado nos
 // onchange de valorTotal, reembolsavel e percentualReembolso, pra manter os três em sincronia.
@@ -2385,6 +2586,9 @@ function fields(vals = {}) {
     { k: 'banco', label: 'Banco', type: 'select', options: db.banks.map(b => b.nome) },
     { k: 'cartaoId', label: 'Cartão', type: 'select', options: db.cards.map(c => [c.id, c.nome]),
       show: v => v.formaPagamento === 'Cartão de crédito' },
+    { k: 'contaId', label: 'Conta bancária', type: 'select', options: db.accounts.map(a => [a.id, contaLabel(a)]),
+      show: v => v.formaPagamento !== 'Cartão de crédito',
+      help: db.accounts.length ? 'Ao marcar como paga, o valor é descontado automaticamente do saldo desta conta.' : 'Cadastre contas em Contas bancárias.' },
     { k: 'natureza', label: 'Natureza', type: 'select', options: [['fixa', 'Fixa'], ['variavel', 'Variável']], value: 'variavel', required: true },
     { k: 'tipo', label: 'Classificação estratégica', type: 'select', options: CLASSIFICACAO_DESPESA },
     { k: 'status', label: 'Status de pagamento', type: 'select', options: STATUS_DESPESA, value: 'previsto', required: true },
@@ -4732,6 +4936,32 @@ function render(el, rerender) {
         }, right: true },
     ], metas)));
 
+  // ---- Orçamento por categoria ----
+  el.append(card(null,
+    h('h2', { class: 'card-title' }, '📐 Orçamento por categoria'),
+    h('p', { class: 'stat-sub' }, 'Defina um limite mensal para as categorias que você quer acompanhar de perto. O Dashboard mostra o progresso de cada uma e destaca em vermelho quem ultrapassou.'),
+    table([
+      { label: 'Categoria', k: 'nome' },
+      { label: 'Limite mensal', render: c => {
+          const b = db.categoryBudgets.find(x => x.categoria === c.nome);
+          return b && Number(b.limiteMensal) > 0 ? fmt(Number(b.limiteMensal)) : '—';
+        }, right: true },
+      { label: '', render: c => {
+          const b = db.categoryBudgets.find(x => x.categoria === c.nome);
+          const editar = ['✏️', () => formModal(`Limite mensal — ${c.nome}`,
+            [{ k: 'limiteMensal', label: 'Limite mensal (R$)', type: 'money', required: true }],
+            { limiteMensal: b ? Number(b.limiteMensal) : 0 },
+            vals => {
+              if (b) update('categoryBudgets', b.id, vals);
+              else add('categoryBudgets', { categoria: c.nome, ...vals });
+              rerender();
+            }), b ? 'Editar limite' : 'Definir limite'];
+          const btns = [editar];
+          if (b) btns.push(['🗑', () => confirmModal(`Remover o limite de ${c.nome}?`, () => { remove('categoryBudgets', b.id); rerender(); }), 'Remover limite']);
+          return rowActions(...btns);
+        }, right: true },
+    ], db.categoriesExpense)));
+
   // ---- Pessoas para reembolso ----
   const pessoaFields = [
     { k: 'nome', label: 'Nome', type: 'text', required: true },
@@ -5020,6 +5250,7 @@ const dashboard = __m['dashboard'];
 const anual = __m['anual'];
 const receitas = __m['receitas'];
 const despesas = __m['despesas'];
+const contas = __m['contas'];
 const cartoes = __m['cartoes'];
 const mapaParcelamentos = __m['mapaParcelamentos'];
 const recorrentes = __m['recorrentes'];
@@ -5039,6 +5270,7 @@ const ROUTES = [
   { path: 'calendario', label: 'Calendário', icon: '🗓️', view: calendario, month: true },
   { path: 'receitas', label: 'Receitas', icon: '💰', view: receitas, month: true },
   { path: 'despesas', label: 'Despesas', icon: '🧾', view: despesas, month: true },
+  { path: 'contas', label: 'Contas bancárias', icon: '🏛️', view: contas },
   { path: 'cartoes', label: 'Cartões e parcelas', icon: '💳', view: cartoes, month: true },
   { path: 'mapa-parcelamentos', label: 'Mapa de parcelamentos', icon: '🗺️', view: mapaParcelamentos, month: true },
   { path: 'recorrentes', label: 'Contas recorrentes', icon: '🔁', view: recorrentes, month: true },
