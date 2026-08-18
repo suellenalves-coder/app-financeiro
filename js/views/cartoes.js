@@ -5,6 +5,7 @@ import { db, ui, add, update, remove, removeWhere, save, STATUS_DESPESA } from '
 import { cardInvoice, monthSummary } from '../calc.js';
 import { card, table, searchableTable, badge, formModal, confirmModal, modal, rowActions, statCard, toast } from '../ui.js';
 import { fields as despesaFields, saveExpense } from './despesas.js';
+import { contaLabel } from './contas.js';
 
 const BANDEIRAS = ['Visa', 'Mastercard', 'Elo', 'American Express', 'Hipercard', 'Outra'];
 
@@ -227,18 +228,26 @@ const STATUS_PARCELAMENTO = [['em_andamento', 'Em andamento'], ['quitada', 'Quit
 // Linhas da fatura de um cartão no mês: parcelas de compras parceladas + despesas avulsas
 // pagas nesse cartão (ex.: abastecimentos) — tudo num só lugar, cada uma com ação de pagar.
 // Compartilhado entre o cabeçalho recolhido (badge + ação rápida) e o corpo expandido (tabela).
-function invoiceLines(inv) {
+// Ao marcar como paga, grava a conta bancária do PAGAMENTO NA PRÓPRIA LINHA (nunca herdada
+// "ao vivo" do cartão em accountBalance) — se a linha já tinha uma conta vinculada, mantém;
+// senão usa a conta padrão do cartão. Isso evita debitar retroativamente parcelas/despesas
+// que já estavam pagas antes de o cartão ganhar uma conta padrão (mesma lógica de Recorrentes).
+function invoiceLines(inv, cartao) {
+  const contaPadrao = cartao?.contaId || '';
+  const patchPago = (novo, contaAtual) => novo === 'pago' ? { status: novo, contaId: contaAtual || contaPadrao || '' } : { status: novo };
   return [
     ...inv.parcelas.map(p => ({
       descricao: db.purchases.find(x => x.id === p.purchaseId)?.descricao || '—',
       categoria: db.purchases.find(x => x.id === p.purchaseId)?.categoria || '—',
-      parcela: `${p.numero}/${p.total}`, valor: p.valor, status: p.status,
-      setStatus: novo => update('installments', p.id, { status: novo }),
+      parcela: `${p.numero}/${p.total}`, valor: p.valor, status: p.status, contaId: p.contaId,
+      setStatus: novo => update('installments', p.id, patchPago(novo, p.contaId)),
+      setConta: contaId => update('installments', p.id, { contaId }),
     })),
     ...inv.despesas.map(e => ({
       descricao: e.descricao, categoria: e.categoria || '—', parcela: '—',
-      valor: e.valorTotal, status: e.status,
-      setStatus: novo => update('expenses', e.id, { status: novo }),
+      valor: e.valorTotal, status: e.status, contaId: e.contaId,
+      setStatus: novo => update('expenses', e.id, patchPago(novo, e.contaId)),
+      setConta: contaId => update('expenses', e.id, { contaId }),
     })),
   ];
 }
@@ -258,6 +267,19 @@ function marcarFaturaPaga(linhas, rerender) {
   for (const l of linhas) l.setStatus('pago');
   toast('Fatura inteira marcada como paga.');
   rerender();
+}
+
+// Vincula manualmente a conta de um pagamento antigo (de antes de o cartão ter conta
+// padrão) — o campo vem sem seleção prévia de propósito, pra exigir uma escolha deliberada
+// em vez de presumir a conta do cartão sem o usuário perceber.
+function vincularContaModal(l, rerender) {
+  formModal(`Vincular conta — ${l.descricao}`, [
+    { k: 'contaId', label: 'Conta bancária', type: 'select', options: db.accounts.map(a => [a.id, contaLabel(a)]), required: true },
+  ], {}, vals => {
+    l.setConta(vals.contaId);
+    toast('Conta vinculada. O saldo passa a considerar este pagamento a partir de agora.');
+    rerender();
+  }, { saveLabel: 'Vincular' });
 }
 
 export function render(el, rerender) {
@@ -311,7 +333,7 @@ export function render(el, rerender) {
 function renderCartaoCard(c, ym, rerender) {
   const st = getCardUi(c.id);
   const inv = cardInvoice(c.id, ym);
-  const linhasFatura = invoiceLines(inv);
+  const linhasFatura = invoiceLines(inv, c);
   const statusFatura = faturaStatus(linhasFatura, ym, c.diaVencimento);
   const pct = c.limitePlanejado > 0 ? inv.total / c.limitePlanejado * 100 : 0;
   const meterColor = pct > 100 ? '#E57373' : pct > 80 ? '#F6C667' : '#7BC99A';
@@ -364,7 +386,7 @@ function renderCartaoCard(c, ym, rerender) {
 
 function renderCartaoBody(c, ym, rerender, inv, pct, meterColor, st) {
   const doCartao = db.purchases.filter(p => p.cartaoId === c.id);
-  const linhas = invoiceLines(inv);
+  const linhas = invoiceLines(inv, c);
   const todasPagas = linhas.length > 0 && linhas.every(l => l.status === 'pago');
 
   const tabs = h('div', { class: 'tabs' },
@@ -377,8 +399,12 @@ function renderCartaoBody(c, ym, rerender, inv, pct, meterColor, st) {
     { label: 'Parcela', k: 'parcela' },
     { label: 'Valor', k: 'valor', money: true },
     { label: 'Status', render: l => badge(l.status) },
-    { label: '', render: l => rowActions(
-        [l.status === 'pago' ? '↩︎' : '✔️', () => { l.setStatus(l.status === 'pago' ? 'previsto' : 'pago'); rerender(); }, l.status === 'pago' ? 'Desfazer pagamento' : 'Marcar como paga']), right: true },
+    { label: '', render: l => rowActions(...[
+        [l.status === 'pago' ? '↩︎' : '✔️', () => { l.setStatus(l.status === 'pago' ? 'previsto' : 'pago'); rerender(); }, l.status === 'pago' ? 'Desfazer pagamento' : 'Marcar como paga'],
+        // Pagamento antigo, de antes de o cartão ter conta vinculada: nenhuma conta foi
+        // debitada. Permite vincular manualmente, um a um, sem duplicar o débito.
+        l.status === 'pago' && !l.contaId ? ['🏦', () => vincularContaModal(l, rerender), 'Vincular conta bancária (pagamento antigo)'] : null,
+      ].filter(Boolean)), right: true },
   ];
 
   const tabMes = h('div', {},
@@ -439,6 +465,8 @@ function cardFields() {
     { k: 'diaFechamento', label: 'Dia de fechamento', type: 'number', min: 1, max: 31 },
     { k: 'diaVencimento', label: 'Dia de vencimento', type: 'number', min: 1, max: 31 },
     { k: 'limitePlanejado', label: 'Limite planejado mensal (R$)', type: 'money', help: 'Quanto você quer gastar no máximo por fatura.' },
+    { k: 'contaId', label: 'Conta bancária', type: 'select', options: db.accounts.map(a => [a.id, contaLabel(a)]),
+      help: db.accounts.length ? 'Conta padrão debitada ao marcar parcelas/despesas da fatura como pagas (pagamentos antigos podem ser vinculados manualmente, um a um).' : 'Cadastre contas em Contas bancárias.' },
     { k: 'obs', label: 'Observações', type: 'textarea', full: true },
   ];
 }

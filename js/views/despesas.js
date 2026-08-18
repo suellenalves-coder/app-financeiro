@@ -104,7 +104,12 @@ export function markPaid(exp, rerender) {
     { k: 'dataPagamento', label: 'Data do pagamento', type: 'date', required: true, value: todayISO() },
     { k: 'formaPagamento', label: 'Forma de pagamento', type: 'select', options: FORMAS_PAGAMENTO, value: exp.formaPagamento },
   ], {}, vals => {
-    update('expenses', exp.id, { status: 'pago', ...vals });
+    // Despesa lançada num cartão sem conta própria vinculada (o campo Conta some nesse
+    // caso): usa a conta padrão do cartão, a mesma lógica de Contas recorrentes — só grava
+    // aqui, na própria despesa, nunca herdada "ao vivo" do cartão em accountBalance.
+    const cartao = exp.cartaoId ? db.cards.find(c => c.id === exp.cartaoId) : null;
+    const contaId = exp.contaId || (vals.formaPagamento === 'Cartão de crédito' ? (cartao?.contaId || '') : '');
+    update('expenses', exp.id, { status: 'pago', contaId, ...vals });
     toast('Despesa marcada como paga.');
     rerender();
   }, { saveLabel: 'Confirmar pagamento' });

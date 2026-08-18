@@ -157,17 +157,20 @@ function recurringPaidByAccount(contaId) {
 }
 
 // Saldo sempre calculado ao vivo a partir do saldo inicial + receitas recebidas +
-// despesas pagas + contas recorrentes pagas vinculadas à conta + conciliações manuais —
-// nunca um campo solto que possa dessincronizar (edição/duplicação/exclusão de
-// lançamentos refletem na hora).
+// despesas pagas + parcelas de cartão pagas + contas recorrentes pagas vinculadas à conta
+// + conciliações manuais — nunca um campo solto que possa dessincronizar (edição/
+// duplicação/exclusão de lançamentos refletem na hora). Parcelas seguem a mesma lógica de
+// vínculo gravado na própria linha (nunca herdado "ao vivo" do cartão) — ver invoiceLines()
+// em cartoes.js.
 export function accountBalance(contaId) {
   const conta = db.accounts.find(a => a.id === contaId);
   if (!conta) return 0;
   const recebido = sum(db.incomes.filter(i => i.contaId === contaId && i.status === 'recebida'), i => i.valor);
   const pago = sum(db.expenses.filter(e => e.contaId === contaId && e.status === 'pago'), e => e.valorTotal);
+  const parcelasPagas = sum(db.installments.filter(i => i.contaId === contaId && i.status === 'pago'), i => i.valor);
   const recorrentesPagas = recurringPaidByAccount(contaId);
   const ajustes = sum(db.accountAdjustments.filter(a => a.contaId === contaId), a => a.valor);
-  return (Number(conta.saldoInicial) || 0) + recebido - pago - recorrentesPagas + ajustes;
+  return (Number(conta.saldoInicial) || 0) + recebido - pago - parcelasPagas - recorrentesPagas + ajustes;
 }
 
 // ---- Orçamento por categoria ----
