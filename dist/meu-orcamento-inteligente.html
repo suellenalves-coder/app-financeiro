@@ -1409,16 +1409,35 @@ function monthInvestRedemptions(ym) {
 }
 
 // ---- Contas bancárias ----
+// Soma das ocorrências de contas recorrentes pagas vinculadas a uma conta. Só conta
+// ocorrências com o vínculo GRAVADO na própria ocorrência (occ.contaId) — nunca herdado
+// "ao vivo" da regra (rec.contaId) — assim, ocorrências antigas já pagas antes de a regra
+// ganhar uma conta padrão não são debitadas retroativamente. Vincular a conta manualmente
+// numa ocorrência antiga (editando-a) passa a contar dali em diante, sem duplicar nada,
+// já que não existe hoje nenhum outro lugar debitando contas recorrentes.
+function recurringPaidByAccount(contaId) {
+  let total = 0;
+  for (const key of Object.keys(db.recurringOcc)) {
+    const occ = db.recurringOcc[key];
+    if (occ.status !== 'pago' || occ.contaId !== contaId) continue;
+    const rec = db.recurring.find(r => r.id === key.split(':')[0]);
+    total += occ.valor !== undefined ? Number(occ.valor) : (Number(rec?.valorPrevisto) || 0);
+  }
+  return total;
+}
+
 // Saldo sempre calculado ao vivo a partir do saldo inicial + receitas recebidas +
-// despesas pagas vinculadas à conta + conciliações manuais — nunca um campo solto que
-// possa dessincronizar (edição/duplicação/exclusão de lançamentos refletem na hora).
+// despesas pagas + contas recorrentes pagas vinculadas à conta + conciliações manuais —
+// nunca um campo solto que possa dessincronizar (edição/duplicação/exclusão de
+// lançamentos refletem na hora).
 function accountBalance(contaId) {
   const conta = db.accounts.find(a => a.id === contaId);
   if (!conta) return 0;
   const recebido = sum(db.incomes.filter(i => i.contaId === contaId && i.status === 'recebida'), i => i.valor);
   const pago = sum(db.expenses.filter(e => e.contaId === contaId && e.status === 'pago'), e => e.valorTotal);
+  const recorrentesPagas = recurringPaidByAccount(contaId);
   const ajustes = sum(db.accountAdjustments.filter(a => a.contaId === contaId), a => a.valor);
-  return (Number(conta.saldoInicial) || 0) + recebido - pago + ajustes;
+  return (Number(conta.saldoInicial) || 0) + recebido - pago - recorrentesPagas + ajustes;
 }
 
 // ---- Orçamento por categoria ----
@@ -3433,6 +3452,7 @@ const { h, fmt, todayISO, ymNow, sum } = __m['utils'];
 const { db, ui, add, update, remove, save, PERIODICIDADES, FORMAS_PAGAMENTO } = __m['store'];
 const { recurringOccurrences } = __m['calc'];
 const { card, table, badge, formModal, confirmModal, rowActions, statCard, toast } = __m['ui'];
+const { contaLabel } = __m['contas'];
 
 function fields() {
   return [
@@ -3445,6 +3465,8 @@ function fields() {
     { k: 'dataFim', label: 'Mês de fim (opcional)', type: 'month', help: 'Deixe vazio para contas sem prazo (útil para financiamentos com fim definido).' },
     { k: 'formaPagamento', label: 'Forma de pagamento', type: 'select', options: FORMAS_PAGAMENTO },
     { k: 'banco', label: 'Banco', type: 'select', options: db.banks.map(b => b.nome) },
+    { k: 'contaId', label: 'Conta bancária', type: 'select', options: db.accounts.map(a => [a.id, contaLabel(a)]),
+      help: db.accounts.length ? 'Conta padrão usada ao marcar uma ocorrência como paga (pode ser trocada mês a mês).' : 'Cadastre contas em Contas bancárias.' },
     { k: 'obs', label: 'Observações', type: 'textarea', full: true },
   ];
 }
@@ -3494,6 +3516,16 @@ function render(el, rerender) {
 
 function occActions(o, rerender) {
   const key = o.key;
+  // Conta já gravada nesta ocorrência especificamente (nunca herdada "ao vivo" da regra) —
+  // é o que accountBalance() usa pra debitar/estornar. Só pra pré-preencher o formulário e
+  // a ação rápida de pagamento usamos o padrão da regra (rec.contaId) quando ainda não há
+  // vínculo gravado na própria ocorrência.
+  const contaGravada = db.recurringOcc[key]?.contaId;
+  // Ocorrência que já estava paga antes de existir esse vínculo (sem contaId gravado):
+  // não presume a conta padrão da regra no formulário, pra exigir uma escolha deliberada
+  // em vez de vincular por acidente ao simplesmente salvar outra edição.
+  const jaEstavaPagaSemVinculo = o.status === 'pago' && contaGravada === undefined;
+  const contaPadrao = contaGravada !== undefined ? contaGravada : (jaEstavaPagaSemVinculo ? '' : (o.rec.contaId || ''));
   const setOcc = patch => {
     db.recurringOcc[key] = { ...(db.recurringOcc[key] || {}), ...patch };
     save();
@@ -3501,7 +3533,7 @@ function occActions(o, rerender) {
   };
   const btns = [];
   if (o.status !== 'pago') {
-    btns.push(['✔️', () => setOcc({ status: 'pago', dataPagamento: todayISO() }), 'Marcar como paga']);
+    btns.push(['✔️', () => setOcc({ status: 'pago', dataPagamento: todayISO(), contaId: contaPadrao }), 'Marcar como paga']);
   } else {
     btns.push(['↩︎', () => setOcc({ status: 'previsto', dataPagamento: '' }), 'Desfazer pagamento']);
   }
@@ -3512,7 +3544,11 @@ function occActions(o, rerender) {
       { k: 'status', label: 'Status', type: 'select', required: true,
         options: [['previsto', 'Previsto'], ['pago', 'Pago'], ['parcial', 'Parcialmente pago'], ['cancelado', 'Cancelado neste mês']] },
       { k: 'dataPagamento', label: 'Data de pagamento', type: 'date', show: v => v.status === 'pago' || v.status === 'parcial' },
-    ], { valor: o.valor, status: o.status === 'vencido' ? 'previsto' : o.status, dataPagamento: o.dataPagamento }, vals => {
+      { k: 'contaId', label: 'Conta bancária', type: 'select', options: db.accounts.map(a => [a.id, contaLabel(a)]),
+        help: !db.accounts.length ? 'Cadastre contas em Contas bancárias.'
+          : jaEstavaPagaSemVinculo ? 'Esta ocorrência já está paga mas sem conta vinculada — o saldo NÃO foi debitado. Vincule aqui para passar a contar dali em diante, sem duplicar o débito.'
+          : 'Debita/estorna automaticamente ao marcar como pago/desfazer.' },
+    ], { valor: o.valor, status: o.status === 'vencido' ? 'previsto' : o.status, dataPagamento: o.dataPagamento, contaId: contaPadrao }, vals => {
       setOcc(vals);
       toast('Ocorrência atualizada só neste mês.');
     });

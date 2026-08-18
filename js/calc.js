@@ -139,16 +139,35 @@ export function monthInvestRedemptions(ym) {
 }
 
 // ---- Contas bancárias ----
+// Soma das ocorrências de contas recorrentes pagas vinculadas a uma conta. Só conta
+// ocorrências com o vínculo GRAVADO na própria ocorrência (occ.contaId) — nunca herdado
+// "ao vivo" da regra (rec.contaId) — assim, ocorrências antigas já pagas antes de a regra
+// ganhar uma conta padrão não são debitadas retroativamente. Vincular a conta manualmente
+// numa ocorrência antiga (editando-a) passa a contar dali em diante, sem duplicar nada,
+// já que não existe hoje nenhum outro lugar debitando contas recorrentes.
+function recurringPaidByAccount(contaId) {
+  let total = 0;
+  for (const key of Object.keys(db.recurringOcc)) {
+    const occ = db.recurringOcc[key];
+    if (occ.status !== 'pago' || occ.contaId !== contaId) continue;
+    const rec = db.recurring.find(r => r.id === key.split(':')[0]);
+    total += occ.valor !== undefined ? Number(occ.valor) : (Number(rec?.valorPrevisto) || 0);
+  }
+  return total;
+}
+
 // Saldo sempre calculado ao vivo a partir do saldo inicial + receitas recebidas +
-// despesas pagas vinculadas à conta + conciliações manuais — nunca um campo solto que
-// possa dessincronizar (edição/duplicação/exclusão de lançamentos refletem na hora).
+// despesas pagas + contas recorrentes pagas vinculadas à conta + conciliações manuais —
+// nunca um campo solto que possa dessincronizar (edição/duplicação/exclusão de
+// lançamentos refletem na hora).
 export function accountBalance(contaId) {
   const conta = db.accounts.find(a => a.id === contaId);
   if (!conta) return 0;
   const recebido = sum(db.incomes.filter(i => i.contaId === contaId && i.status === 'recebida'), i => i.valor);
   const pago = sum(db.expenses.filter(e => e.contaId === contaId && e.status === 'pago'), e => e.valorTotal);
+  const recorrentesPagas = recurringPaidByAccount(contaId);
   const ajustes = sum(db.accountAdjustments.filter(a => a.contaId === contaId), a => a.valor);
-  return (Number(conta.saldoInicial) || 0) + recebido - pago + ajustes;
+  return (Number(conta.saldoInicial) || 0) + recebido - pago - recorrentesPagas + ajustes;
 }
 
 // ---- Orçamento por categoria ----
