@@ -1,9 +1,10 @@
 // Configurações: metas, categorias, bancos, pessoas, regras e dados.
-import { h, fmt, downloadFile, todayISO, ymNow, ymAdd, uid } from '../utils.js';
+import { h, fmt, downloadFile, todayISO, ymNow, ymAdd, ymLabel, ymOf, uid } from '../utils.js';
 import { db, save, add, update, remove, resetAll } from '../store.js';
 import { card, table, formModal, confirmModal, rowActions, toast, badge, modal } from '../ui.js';
 import { generateInstallments } from './cartoes.js';
 import { addCard } from './cartoes.js';
+import { findDuplicateIncomeGroups } from '../calc.js';
 import * as sync from '../sync.js';
 
 export function render(el, rerender) {
@@ -165,8 +166,37 @@ export function render(el, rerender) {
         return h('span', {}, input, h('button', { class: 'btn btn-ghost btn-sm', onclick: () => input.click() }, '⬆ Restaurar backup'));
       })(),
       h('button', { class: 'btn btn-ghost btn-sm', onclick: () => loadSample(rerender) }, '✨ Carregar dados de exemplo'),
+      h('button', { class: 'btn btn-ghost btn-sm', onclick: () => checarReceitasDuplicadas(rerender) }, '🔍 Verificar receitas recorrentes duplicadas'),
       h('button', { class: 'btn btn-danger btn-sm', onclick: () =>
         confirmModal('Apagar TODOS os dados e recomeçar do zero? Esta ação não pode ser desfeita.', () => { resetAll(); location.reload(); }) }, '🗑 Apagar tudo'))));
+}
+
+// Um bug já corrigido fazia receitas recorrentes materializadas (ex.: ao marcar como
+// recebida) gerarem sua própria cadeia paralela de projeções futuras, duplicando o
+// lançamento nos meses seguintes assim que essas cópias também eram materializadas.
+// Esta verificação é só pra limpar o que já ficou duplicado ANTES da correção — nunca
+// apaga nada sem mostrar exatamente o quê, e sempre mantém o lançamento mais antigo.
+function checarReceitasDuplicadas(rerender) {
+  const grupos = findDuplicateIncomeGroups();
+  if (!grupos.length) { toast('Nenhuma receita recorrente duplicada encontrada.'); return; }
+  const total = grupos.reduce((a, g) => a + g.length - 1, 0);
+  const overlay = modal('Receitas recorrentes duplicadas', h('div', {},
+    h('p', { class: 'stat-sub' },
+      `Encontramos ${grupos.length} grupo(s) com ${total} lançamento(s) duplicado(s) — resultado de um bug já corrigido nas projeções de receita recorrente. Em cada grupo, o lançamento mais antigo é mantido e os demais são removidos.`),
+    table([
+      { label: 'Descrição', render: g => g[0].descricao },
+      { label: 'Mês', render: g => ymLabel(ymOf(g[0].data)) },
+      { label: 'Valor', render: g => fmt(g[0].valor), right: true },
+      { label: 'Cópias', render: g => String(g.length), right: true },
+    ], grupos),
+    h('div', { class: 'modal-actions' },
+      h('button', { class: 'btn btn-ghost', onclick: () => overlay.remove() }, 'Cancelar'),
+      h('button', { class: 'btn btn-danger', onclick: () => {
+        for (const g of grupos) for (const dup of g.slice(1)) remove('incomes', dup.id);
+        toast(`${total} lançamento(s) duplicado(s) removido(s).`);
+        overlay.remove();
+        rerender();
+      } }, `🗑 Remover ${total} duplicata(s)`))), { wide: true });
 }
 
 // Login/criação de conta reutilizável — usado no card de sincronização e no

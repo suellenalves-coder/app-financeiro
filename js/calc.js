@@ -10,7 +10,12 @@ const ATIVAS = s => s !== 'cancelado' && s !== 'cancelada';
 export function monthIncomes(ym) {
   const direct = db.incomes.filter(i => ymOf(i.data) === ym && ATIVAS(i.status));
   const projected = db.incomes
-    .filter(i => i.recorrente && ATIVAS(i.status) && ymDiff(ym, ymOf(i.data)) > 0)
+    // "!i.recorrenteDe" exclui receitas já materializadas de um mês anterior (ex.: ao
+    // marcar uma ocorrência projetada como recebida) — elas herdam recorrente:true da
+    // receita original, mas não são a raiz da recorrência. Sem esse filtro, cada mês
+    // materializado passava a gerar sua PRÓPRIA cadeia paralela de projeções futuras,
+    // duplicando a receita nos meses seguintes.
+    .filter(i => i.recorrente && !i.recorrenteDe && ATIVAS(i.status) && ymDiff(ym, ymOf(i.data)) > 0)
     .filter(i => !db.incomes.some(o => o.recorrenteDe === i.id && ymOf(o.data) === ym))
     .map(i => ({
       ...i,
@@ -21,6 +26,24 @@ export function monthIncomes(ym) {
       virtual: true,
     }));
   return [...direct, ...projected];
+}
+
+// Detecta receitas já duplicadas por causa do bug acima (materializações de recorrência
+// que geraram sua própria cadeia paralela, antes da correção). Agrupa por
+// descrição+categoria+valor+mês entre registros MATERIALIZADOS (recorrenteDe definido) —
+// a raiz original nunca entra no agrupamento. Cada grupo vem ordenado do mais antigo (o
+// legítimo, a manter) pro mais novo (a duplicata, candidata a remoção) por _ts.
+export function findDuplicateIncomeGroups() {
+  const grupos = new Map();
+  for (const i of db.incomes) {
+    if (!i.recorrente || !i.recorrenteDe) continue;
+    const key = [i.descricao, i.categoria, Number(i.valor) || 0, ymOf(i.data)].join('|');
+    if (!grupos.has(key)) grupos.set(key, []);
+    grupos.get(key).push(i);
+  }
+  return [...grupos.values()]
+    .filter(g => g.length > 1)
+    .map(g => g.sort((a, b) => (Number(a._ts) || 0) - (Number(b._ts) || 0)));
 }
 
 // ---- Despesas avulsas (não recorrentes, não parceladas) ----
