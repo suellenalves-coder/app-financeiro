@@ -64,6 +64,29 @@ export const CRITERIOS_DIVISAO = [
 
 export const CATEGORIAS_CARRO = ['Carro', 'Combustível', 'Pedágio/Estacionamento'];
 
+// Metadados de navegação (path/label/ícone) usados tanto pelo menu (app.js) quanto pela
+// tela de Configurações → Navegação — mantidos aqui (não em app.js) pra evitar import
+// circular entre os dois.
+export const NAV_SECTIONS = [
+  ['dashboard', 'Dashboard', '🏠'],
+  ['anual', 'Visão anual', '📅'],
+  ['calendario', 'Calendário', '🗓️'],
+  ['receitas', 'Receitas', '💰'],
+  ['despesas', 'Despesas', '🧾'],
+  ['contas', 'Contas bancárias', '🏛️'],
+  ['cartoes', 'Cartões e parcelas', '💳'],
+  ['mapa-parcelamentos', 'Mapa de parcelamentos', '🗺️'],
+  ['recorrentes', 'Contas recorrentes', '🔁'],
+  ['provisoes', 'Provisões', '🏦'],
+  ['investimentos', 'Investimentos', '📈'],
+  ['reembolsos', 'Reembolsos', '🤝'],
+  ['simulador', 'Simulador de compra', '🧮'],
+  ['carro', 'Carro', '🚗'],
+  ['fechamento', 'Fechamento mensal', '✅'],
+  ['relatorios', 'Relatórios', '📊'],
+  ['config', 'Configurações', '⚙️'],
+];
+
 function defaults() {
   return {
     version: 1,
@@ -78,6 +101,10 @@ function defaults() {
       limiteAlimentacaoFora: 0,
       saldoMinimoSeguranca: 0,
       limiteParcelamentosPct: 30, // % da renda segura que os parcelamentos podem ocupar
+      // Navegação simplificada: rotas escondidas do menu (mas o código e os dados
+      // continuam intactos — reative a qualquer momento em Configurações → Navegação).
+      // Dashboard e Configurações nunca entram aqui, pra nunca ficar sem acesso a elas.
+      hiddenSections: ['mapa-parcelamentos', 'provisoes', 'simulador', 'carro', 'fechamento', 'relatorios', 'calendario'],
       onboardingDone: false,
       carroCategoriasAtivas: [...CATEGORIAS_CARRO], // quais categorias entram na análise do módulo Carro
     },
@@ -211,6 +238,13 @@ export function removeWhere(coll, pred) {
 
 export function get(coll, id) {
   return db[coll].find(x => x.id === id);
+}
+
+// Rotas que nunca podem ficar escondidas do menu — sem elas não daria pra navegar de
+// volta nem reativar uma seção escondida.
+export const SEMPRE_VISIVEIS = ['dashboard', 'config'];
+export function isSectionVisible(path) {
+  return SEMPRE_VISIVEIS.includes(path) || !db.settings.hiddenSections.includes(path);
 }
 
 // Estado de interface (mês selecionado), fora dos dados persistidos principais.

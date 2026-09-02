@@ -2,7 +2,7 @@
 import { h, fmt, todayISO, sum } from '../utils.js';
 import { db, ui, add, update, remove, save, TIPOS_RECEITA, STATUS_RECEITA } from '../store.js';
 import { monthIncomes } from '../calc.js';
-import { card, table, badge, formModal, confirmModal, rowActions, statCard, toast } from '../ui.js';
+import { card, table, badge, formModal, confirmModal, rowActions, statCard, heroStat, toast } from '../ui.js';
 import { contaLabel } from './contas.js';
 
 const TIPO_LABEL = Object.fromEntries(TIPOS_RECEITA);
@@ -30,8 +30,9 @@ export function render(el, rerender) {
   let incomes = monthIncomes(ym).sort((a, b) => a.data.localeCompare(b.data));
   if (filtro.tipo) incomes = incomes.filter(i => i.tipo === filtro.tipo);
 
+  el.append(heroStat('Total do mês', sum(incomes, i => i.valor)));
+
   el.append(h('div', { class: 'grid grid-cards' },
-    statCard('Total do mês', sum(incomes, i => i.valor)),
     statCard('Recebido', sum(incomes.filter(i => i.status === 'recebida'), i => i.valor), { tone: 'tone-ok' }),
     statCard('Previsto', sum(incomes.filter(i => i.status === 'prevista'), i => i.valor)),
     statCard('Segura', sum(incomes.filter(i => i.tipo === 'segura'), i => i.valor))));
@@ -60,7 +61,7 @@ export function render(el, rerender) {
       { label: 'Valor', k: 'valor', money: true },
       { label: 'Status', render: r => badge(r.status) },
       { label: '', render: r => actions(r, rerender), right: true },
-    ], incomes, { empty: 'Nenhuma receita neste mês para este filtro.' })));
+    ], incomes, { empty: 'Nenhuma receita neste mês para este filtro.', responsive: true })));
 }
 
 function actions(r, rerender) {

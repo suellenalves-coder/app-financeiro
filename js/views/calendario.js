@@ -102,7 +102,7 @@ function dayModal(iso, events) {
       { label: 'Item', k: 'titulo' },
       { label: 'Valor', k: 'valor', money: true },
       { label: 'Status', render: e => badge(e.status) },
-    ], events),
+    ], events, { responsive: true }),
     h('div', { class: 'stat-sub', style: 'margin-top:10px' },
       `Total do dia: ${fmt(sum(events.filter(e => e.tipo !== 'receita'), e => e.valor))} em compromissos · ${fmt(sum(events.filter(e => e.tipo === 'receita'), e => e.valor))} em receitas.`)));
 }

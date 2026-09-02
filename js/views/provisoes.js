@@ -58,7 +58,7 @@ export function render(el, rerender) {
           ['✏️', () => formModal('Editar provisão', fields(), p, vals => { update('provisions', p.id, vals); rerender(); }), 'Editar'],
           [p.status === 'ativa' ? '⏸' : '▶️', () => { update('provisions', p.id, { status: p.status === 'ativa' ? 'pausada' : 'ativa' }); rerender(); }, p.status === 'ativa' ? 'Pausar' : 'Reativar'],
           ['🗑', () => confirmModal(`Excluir a provisão "${p.nome}"?`, () => { remove('provisions', p.id); rerender(); }), 'Excluir']), right: true },
-    ], db.provisions, { empty: 'Nenhuma provisão. Crie provisões para IPVA, seguro, viagens e presentes — assim nada vira surpresa.' })));
+    ], db.provisions, { empty: 'Nenhuma provisão. Crie provisões para IPVA, seguro, viagens e presentes — assim nada vira surpresa.', responsive: true })));
 }
 
 // Quanto deveria estar acumulado até este mês, mantendo o ritmo sugerido.

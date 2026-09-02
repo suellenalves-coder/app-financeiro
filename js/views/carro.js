@@ -111,7 +111,7 @@ export function render(el, rerender) {
       { label: 'Valor', k: 'valor', money: true },
       { label: 'Status', render: i => badge(i.status) },
     ], items.sort((a, b) => a.data.localeCompare(b.data)),
-    { empty: `Nenhuma despesa do carro neste mês. Categorias incluídas: ${ativas.join(', ') || 'nenhuma selecionada acima'}. Subcategorias sugeridas: ${SUBCATS.join(', ')}.` })));
+    { empty: `Nenhuma despesa do carro neste mês. Categorias incluídas: ${ativas.join(', ') || 'nenhuma selecionada acima'}. Subcategorias sugeridas: ${SUBCATS.join(', ')}.`, responsive: true })));
 
   if (provCarro.length) {
     el.append(card('Provisões ligadas ao carro',
@@ -121,7 +121,7 @@ export function render(el, rerender) {
         { label: 'Mensal', render: p => fmt(provisionMonthly(p, ym)), right: true },
         { label: 'Acumulado', k: 'valorAcumulado', money: true },
         { label: 'Status', render: p => badge(p.status) },
-      ], provCarro)));
+      ], provCarro, { responsive: true })));
   }
 }
 

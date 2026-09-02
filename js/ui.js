@@ -231,6 +231,18 @@ export function card(title, ...children) {
     title ? h('h2', { class: 'card-title' }, title) : null, ...children);
 }
 
+// ---- Destaque do número mais importante de uma tela (hierarquia visual: um único
+// valor grande acima do resto, em vez de tudo com o mesmo peso). Verde por padrão;
+// `bad: true` troca pro tom de alerta — mesma linguagem de cor dos badges/stat-cards.
+export function heroStat(label, value, { sub = '', bad = false, onclick } = {}) {
+  const el = h('div', { class: `card hero-stat ${bad ? 'hero-stat-bad' : ''} ${onclick ? 'clickable' : ''}` },
+    h('div', { class: 'stat-label' }, label),
+    h('div', { class: 'hero-stat-value' }, typeof value === 'number' ? fmt(value) : value),
+    sub ? h('div', { class: 'stat-sub' }, sub) : null);
+  if (onclick) el.addEventListener('click', onclick);
+  return el;
+}
+
 // ---- Bloco colapsável de alto nível (ex.: seções do Dashboard) ----
 // Diferente de card(): agrupa vários cards/gráficos sob um título com peso visual maior,
 // com opção de recolher a seção inteira. Aberta por padrão.

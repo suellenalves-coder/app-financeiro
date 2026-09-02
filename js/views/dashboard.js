@@ -1,12 +1,12 @@
 // Dashboard mensal: visão consolidada agrupada em blocos com hierarquia visual clara,
 // em vez de uma lista longa de cards soltos.
 import { h, fmt, fmtPct, ymAdd, ymShort } from '../utils.js';
-import { ui, db } from '../store.js';
+import { ui, db, isSectionVisible } from '../store.js';
 import {
   monthSummary, commitmentBreakdown, expensesByCategory, alertsFor, futureInstallmentsTotal,
   accountBalance, topCategoriesComparison, monthSummary as ms,
 } from '../calc.js';
-import { statCard, card, section, alertBanner, table } from '../ui.js';
+import { statCard, card, section, heroStat, alertBanner, table } from '../ui.js';
 import { donut, hstack, lines, bars, CHART_COLORS } from '../charts.js';
 import { contaLabel } from './contas.js';
 
@@ -17,6 +17,12 @@ export function render(el) {
   const tone = v => v < 0 ? 'tone-bad' : 'tone-ok';
 
   el.append(alertBanner(alerts) || '');
+
+  // ---- O número mais importante da tela, em destaque acima de tudo ----
+  el.append(heroStat('Saldo livre real do mês', s.saldoLivreReal, {
+    sub: 'o que sobra da sua renda segura depois de todos os compromissos',
+    bad: s.saldoLivreReal < 0,
+  }));
 
   // ---- Minhas Contas ----
   el.append(section('🏛️', 'Minhas Contas',
@@ -83,11 +89,12 @@ export function render(el) {
 
   // ---- A receber e investir ----
   el.append(section('💰', 'A receber e investir',
-    h('div', { class: 'grid grid-cards' },
+    h('div', { class: 'grid grid-cards' }, [
       statCard('Reembolsos a receber', s.reembolsosAReceber, { tone: s.reembolsosAReceber > 0 ? 'tone-warn' : '', onclick: () => location.hash = '#/reembolsos' }),
       statCard('Investimentos do mês', s.investimentos, { sub: `realizado: ${fmt(s.investRealizado)}`, onclick: () => location.hash = '#/investimentos' }),
-      statCard('Provisões do mês', s.provisoes, { onclick: () => location.hash = '#/provisoes' }),
-      statCard('Contas recorrentes do mês', s.recorrentes, { onclick: () => location.hash = '#/recorrentes' }))));
+      isSectionVisible('provisoes') ? statCard('Provisões do mês', s.provisoes, { onclick: () => location.hash = '#/provisoes' }) : null,
+      statCard('Contas recorrentes do mês', s.recorrentes, { onclick: () => location.hash = '#/recorrentes' }),
+    ].filter(Boolean))));
 }
 
 // Barra de progresso (gasto atual / limite definido) por categoria com orçamento configurado.
@@ -128,5 +135,5 @@ function topCategoriesCard(ym) {
       { label: 'Variação', render: r => h('span', {
           style: `color:${r.delta > 0 ? '#C0504D' : r.delta < 0 ? '#2E7D53' : 'inherit'};font-weight:600`,
         }, `${r.delta > 0 ? '▲' : r.delta < 0 ? '▼' : '—'} ${fmt(Math.abs(r.delta))}`), right: true },
-    ], top));
+    ], top, { responsive: true }));
 }

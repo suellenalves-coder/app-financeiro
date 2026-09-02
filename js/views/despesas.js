@@ -5,7 +5,7 @@ import {
   CLASSIFICACAO_DESPESA, STATUS_DESPESA, FORMAS_PAGAMENTO,
 } from '../store.js';
 import { monthExpenses, expenseNet } from '../calc.js';
-import { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } from '../ui.js';
+import { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, heroStat, toast } from '../ui.js';
 import { contaLabel } from './contas.js';
 
 // Recalcula o valor a reembolsar (R$) a partir do percentual × valor total — usado nos
@@ -128,9 +128,10 @@ export function render(el, rerender) {
   const bruta = sum(list, e => e.valorTotal);
   const liquida = sum(list, expenseNet);
 
+  el.append(heroStat('Despesa líquida real do mês', liquida, { sub: 'descontando reembolsos — o que realmente pesa no seu orçamento' }));
+
   el.append(h('div', { class: 'grid grid-cards' },
     statCard('Despesa bruta do mês', bruta, { sub: 'tudo que você paga' }),
-    statCard('Despesa líquida real', liquida, { sub: 'descontando reembolsos', tone: 'tone-accent' }),
     statCard('Pagas', sum(list.filter(e => e.status === 'pago'), e => e.valorTotal), { tone: 'tone-ok' }),
     statCard('Em aberto', sum(list.filter(e => ['previsto', 'vencido', 'parcial'].includes(e.status)), e => e.valorTotal))));
 
@@ -166,7 +167,7 @@ export function render(el, rerender) {
       { label: 'Pagamento', k: 'formaPagamento' },
       { label: 'Status', render: e => badge(e.status) },
       { label: '', render: e => actions(e, rerender), right: true },
-    ], list, { empty: 'Nenhuma despesa neste mês.' })));
+    ], list, { empty: 'Nenhuma despesa neste mês.', responsive: true })));
 }
 
 function actions(e, rerender) {

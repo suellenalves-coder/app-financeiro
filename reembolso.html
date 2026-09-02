@@ -35,7 +35,7 @@
     // página enxergar despesas, outras pessoas ou qualquer coisa fora do que a função
     // get_reembolsos_publicos (Supabase) decidir devolver para este token específico.
     import { fmt, h, ymShort } from './js/utils.js';
-    import { card, table, badge } from './js/ui.js';
+    import { card, table, badge, heroStat } from './js/ui.js';
 
     const params = new URLSearchParams(location.search);
     const token = params.get('token');
@@ -52,9 +52,7 @@
       content.innerHTML = '';
       const items = data.items || [];
       content.append(
-        h('div', { class: 'card hero-stat' },
-          h('div', { class: 'stat-label' }, `Total pendente de ${data.pessoa}`),
-          h('div', { class: 'hero-stat-value' }, fmt(Number(data.totalPendente) || 0))),
+        heroStat(`Total pendente de ${data.pessoa}`, Number(data.totalPendente) || 0),
         card('Itens pendentes', table([
           { label: 'Mês', render: r => r.mes ? ymShort(r.mes) : '—' },
           { label: 'Descrição', k: 'descricao' },

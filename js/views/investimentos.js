@@ -2,7 +2,7 @@
 import { h, fmt, todayISO, ymOf, sum } from '../utils.js';
 import { db, ui, add, update, remove, TIPOS_INVESTIMENTO, OBJETIVOS_INVESTIMENTO } from '../store.js';
 import { totalInvested, reserveTotal, monthInvestDone, monthInvestPlanned, monthInvestRedemptions } from '../calc.js';
-import { card, table, formModal, confirmModal, rowActions, statCard, toast, alertBanner } from '../ui.js';
+import { card, table, formModal, confirmModal, rowActions, statCard, heroStat, toast, alertBanner } from '../ui.js';
 import { donut } from '../charts.js';
 
 function fields() {
@@ -30,8 +30,9 @@ export function render(el, rerender) {
     el.append(alertBanner([{ level: 'aviso', msg: `Sua reserva (${fmt(reserva)}) está abaixo da meta mínima definida (${fmt(metaMin)}).` }]));
   }
 
+  el.append(heroStat('Total investido', totalInvested()));
+
   el.append(h('div', { class: 'grid grid-cards' },
-    statCard('Total investido', totalInvested(), { tone: 'tone-accent' }),
     statCard('Reserva de emergência', reserva, {
       sub: metaMin ? `meta: ${fmt(metaMin)}${db.settings.metaReservaMax ? ' – ' + fmt(db.settings.metaReservaMax) : ''} (${metaMin ? Math.min(999, Math.round(reserva / metaMin * 100)) : 0}%)` : 'defina a meta em Configurações',
       tone: metaMin && reserva < metaMin ? 'tone-warn' : 'tone-ok',
@@ -69,7 +70,7 @@ export function render(el, rerender) {
           ['💸', () => resgateModal(i, rerender), 'Registrar resgate'],
           ['✏️', () => formModal('Editar investimento', fields(), i, vals => { update('investments', i.id, vals); rerender(); }), 'Editar'],
           ['🗑', () => confirmModal(`Excluir o investimento "${i.produto}"?`, () => { remove('investments', i.id); rerender(); }), 'Excluir']), right: true },
-    ], db.investments, { empty: 'Nenhum investimento cadastrado. Separe o dinheiro investido do disponível para ver sua evolução patrimonial.' })));
+    ], db.investments, { empty: 'Nenhum investimento cadastrado. Separe o dinheiro investido do disponível para ver sua evolução patrimonial.', responsive: true })));
 
   // Aportes do mês
   const aportes = db.investContrib.filter(c => ymOf(c.data) === ym);
@@ -85,7 +86,7 @@ export function render(el, rerender) {
             remove('investContrib', a.id);
             rerender();
           }), 'Excluir']), right: true },
-      ], aportes)));
+      ], aportes, { responsive: true })));
   }
 
   // Resgates do mês — o valor já entrou em Receitas como "Resgate de Investimento",
@@ -106,7 +107,7 @@ export function render(el, rerender) {
             remove('investRedemptions', r.id);
             rerender();
           }), 'Excluir']), right: true },
-      ], resgates)));
+      ], resgates, { responsive: true })));
   }
 }
 

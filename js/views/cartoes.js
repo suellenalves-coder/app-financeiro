@@ -1,9 +1,9 @@
 // Cartões e compras parceladas: cartões recolhidos por padrão, com abas e busca dentro
 // de cada um. O mapa de parcelamentos futuros mora em tela própria (mapaParcelamentos.js).
 import { h, fmt, todayISO, ymNow, ymAdd, ymDiff, ymShort, ymLabel, dateInMonth, sum, uid, parseTable, parseMoney, parseYm } from '../utils.js';
-import { db, ui, add, update, remove, removeWhere, save, STATUS_DESPESA } from '../store.js';
+import { db, ui, add, update, remove, removeWhere, save, STATUS_DESPESA, isSectionVisible } from '../store.js';
 import { cardInvoice, monthSummary } from '../calc.js';
-import { card, table, searchableTable, badge, formModal, confirmModal, modal, rowActions, statCard, toast } from '../ui.js';
+import { card, table, searchableTable, badge, formModal, confirmModal, modal, rowActions, statCard, heroStat, toast } from '../ui.js';
 import { fields as despesaFields, saveExpense } from './despesas.js';
 import { contaLabel } from './contas.js';
 
@@ -286,6 +286,15 @@ export function render(el, rerender) {
   const ym = ui.month;
   ensureReimbursementSync();
 
+  // ---- Faturas por cartão no mês: cada cartão inicia recolhido, mostrando só o essencial ----
+  const cartoesAtivos = db.cards.filter(c => c.ativo !== false);
+  const idsCartoesAtivos = new Set(cartoesAtivos.map(c => c.id));
+
+  if (cartoesAtivos.length) {
+    const totalFaturas = sum(cartoesAtivos, c => cardInvoice(c.id, ym).total);
+    el.append(heroStat('Total das faturas do mês', totalFaturas, { sub: `somando ${cartoesAtivos.length} cartão(ões) ativo(s)` }));
+  }
+
   // ---- Ações principais (fixas no topo, antes de qualquer fatura) ----
   el.append(card(null, h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
     h('button', { class: 'btn btn-primary', onclick: () => formModal('Nova compra parcelada', purchaseFields(), {}, vals => {
@@ -295,18 +304,14 @@ export function render(el, rerender) {
     }, { wide: true }) }, '+ Nova compra parcelada'),
     h('button', { class: 'btn btn-secondary', onclick: () => importModal(rerender) }, '⬆ Importar parcelamentos em massa'),
     h('button', { class: 'btn btn-ghost', onclick: () => addCard(rerender) }, '+ Novo cartão'),
-    h('button', { class: 'btn btn-ghost', onclick: () => location.hash = '#/simulador' }, '🧮 Simular nova compra'),
-    h('button', { class: 'btn btn-ghost', onclick: () => location.hash = '#/mapa-parcelamentos' }, '🗺️ Mapa de parcelamentos futuros'))));
+    isSectionVisible('simulador') ? h('button', { class: 'btn btn-ghost', onclick: () => location.hash = '#/simulador' }, '🧮 Simular nova compra') : null,
+    isSectionVisible('mapa-parcelamentos') ? h('button', { class: 'btn btn-ghost', onclick: () => location.hash = '#/mapa-parcelamentos' }, '🗺️ Mapa de parcelamentos futuros') : null)));
 
   if (!db.cards.length) {
     el.append(card('Comece cadastrando um cartão',
       h('p', { class: 'stat-sub' }, 'Cadastre seus cartões de crédito para acompanhar faturas e distribuir parcelas automaticamente.'),
       h('button', { class: 'btn btn-primary', onclick: () => addCard(rerender) }, '+ Cadastrar cartão')));
   }
-
-  // ---- Faturas por cartão no mês: cada cartão inicia recolhido, mostrando só o essencial ----
-  const cartoesAtivos = db.cards.filter(c => c.ativo !== false);
-  const idsCartoesAtivos = new Set(cartoesAtivos.map(c => c.id));
 
   if (cartoesAtivos.length > 1) {
     el.append(h('div', { style: 'display:flex;gap:8px;margin:-2px 0 14px' },

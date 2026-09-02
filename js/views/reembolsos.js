@@ -4,7 +4,7 @@ import { h, fmt, fmtDate, todayISO, sum, ymShort, ymLabel, ymAdd } from '../util
 import { db, ui, add, update, remove, save, STATUS_REEMBOLSO, CRITERIOS_DIVISAO, FORMAS_PAGAMENTO } from '../store.js';
 import { reimbPending, reimbOutstanding, reimbMonth } from '../calc.js';
 import { ensureReimbursementSync } from './cartoes.js';
-import { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } from '../ui.js';
+import { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, heroStat, toast } from '../ui.js';
 import { bars, CHART_COLORS } from '../charts.js';
 import * as sync from '../sync.js';
 
@@ -130,9 +130,7 @@ export function render(el, rerender) {
   const doMes = ativos.filter(r => reimbMonth(r) === ym);
 
   // ---- Total geral em destaque (item mais consultado) ----
-  el.append(h('div', { class: 'card hero-stat' },
-    h('div', { class: 'stat-label' }, 'Total a receber (todos os meses)'),
-    h('div', { class: 'hero-stat-value' }, fmt(reimbOutstanding()))));
+  el.append(heroStat('Total a receber (todos os meses)', reimbOutstanding()));
 
   el.append(h('div', { class: 'grid grid-cards' },
     statCard(`Pendente em ${ymLabel(ym)}`, sum(doMes, reimbPending), { tone: sum(doMes, reimbPending) > 0 ? 'tone-warn' : 'tone-ok' }),

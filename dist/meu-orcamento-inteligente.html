@@ -174,6 +174,12 @@ input, select, textarea { font: inherit; color: var(--ink); }
 }
 .hero-stat .stat-label { font-size: 13px; font-weight: 600; color: #1F5C3D; }
 .hero-stat-value { font-size: 38px; font-weight: 800; letter-spacing: -1px; color: #1F5C3D; }
+.hero-stat .stat-sub { color: #3C7A5C; }
+.hero-stat.clickable { cursor: pointer; transition: transform .1s; }
+.hero-stat.clickable:hover { transform: translateY(-1px); }
+.hero-stat-bad { background: linear-gradient(135deg, var(--rosa), #FBE6E8); }
+.hero-stat-bad .stat-label, .hero-stat-bad .hero-stat-value { color: #9A3B3B; }
+.hero-stat-bad .stat-sub { color: #B4605F; }
 @media (max-width: 860px) { .hero-stat-value { font-size: 30px; } }
 
 /* ---- Alertas ---- */
@@ -332,6 +338,16 @@ input, select, textarea { font: inherit; color: var(--ink); }
 /* ---- Barra de comprometimento ---- */
 .commit-meter { height: 12px; border-radius: 999px; background: var(--cinza-gelo); overflow: hidden; margin: 8px 0 4px; }
 .commit-meter > div { height: 100%; border-radius: 999px; transition: width .3s; }
+
+/* ---- Lista de seções que podem ser escondidas do menu (Config → Navegação) ---- */
+.nav-toggle-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 12px; }
+.nav-toggle-item {
+  display: flex; align-items: center; gap: 8px; padding: 7px 4px; font-size: 14px; cursor: pointer;
+  border-radius: 8px;
+}
+.nav-toggle-item:hover { background: var(--cinza-gelo); }
+.nav-toggle-item input { width: 17px; height: 17px; accent-color: #2E9E63; flex-shrink: 0; }
+.nav-toggle-icon { width: 20px; text-align: center; flex-shrink: 0; }
 
 /* ---- Filtros ---- */
 .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
@@ -644,6 +660,29 @@ const CRITERIOS_DIVISAO = [
 
 const CATEGORIAS_CARRO = ['Carro', 'Combustível', 'Pedágio/Estacionamento'];
 
+// Metadados de navegação (path/label/ícone) usados tanto pelo menu (app.js) quanto pela
+// tela de Configurações → Navegação — mantidos aqui (não em app.js) pra evitar import
+// circular entre os dois.
+const NAV_SECTIONS = [
+  ['dashboard', 'Dashboard', '🏠'],
+  ['anual', 'Visão anual', '📅'],
+  ['calendario', 'Calendário', '🗓️'],
+  ['receitas', 'Receitas', '💰'],
+  ['despesas', 'Despesas', '🧾'],
+  ['contas', 'Contas bancárias', '🏛️'],
+  ['cartoes', 'Cartões e parcelas', '💳'],
+  ['mapa-parcelamentos', 'Mapa de parcelamentos', '🗺️'],
+  ['recorrentes', 'Contas recorrentes', '🔁'],
+  ['provisoes', 'Provisões', '🏦'],
+  ['investimentos', 'Investimentos', '📈'],
+  ['reembolsos', 'Reembolsos', '🤝'],
+  ['simulador', 'Simulador de compra', '🧮'],
+  ['carro', 'Carro', '🚗'],
+  ['fechamento', 'Fechamento mensal', '✅'],
+  ['relatorios', 'Relatórios', '📊'],
+  ['config', 'Configurações', '⚙️'],
+];
+
 function defaults() {
   return {
     version: 1,
@@ -658,6 +697,10 @@ function defaults() {
       limiteAlimentacaoFora: 0,
       saldoMinimoSeguranca: 0,
       limiteParcelamentosPct: 30, // % da renda segura que os parcelamentos podem ocupar
+      // Navegação simplificada: rotas escondidas do menu (mas o código e os dados
+      // continuam intactos — reative a qualquer momento em Configurações → Navegação).
+      // Dashboard e Configurações nunca entram aqui, pra nunca ficar sem acesso a elas.
+      hiddenSections: ['mapa-parcelamentos', 'provisoes', 'simulador', 'carro', 'fechamento', 'relatorios', 'calendario'],
       onboardingDone: false,
       carroCategoriasAtivas: [...CATEGORIAS_CARRO], // quais categorias entram na análise do módulo Carro
     },
@@ -793,6 +836,13 @@ function get(coll, id) {
   return db[coll].find(x => x.id === id);
 }
 
+// Rotas que nunca podem ficar escondidas do menu — sem elas não daria pra navegar de
+// volta nem reativar uma seção escondida.
+const SEMPRE_VISIVEIS = ['dashboard', 'config'];
+function isSectionVisible(path) {
+  return SEMPRE_VISIVEIS.includes(path) || !db.settings.hiddenSections.includes(path);
+}
+
 // Estado de interface (mês selecionado), fora dos dados persistidos principais.
 const ui = {
   month: ymNow(),
@@ -812,7 +862,7 @@ function applyRules(descricao) {
   return out;
 }
 
-return { CATEGORIAS_DESPESA, CATEGORIAS_RECEITA, TIPOS_RECEITA, STATUS_RECEITA, CLASSIFICACAO_DESPESA, STATUS_DESPESA, STATUS_REEMBOLSO, FORMAS_PAGAMENTO, PERIODICIDADES, TIPOS_INVESTIMENTO, OBJETIVOS_INVESTIMENTO, CRITERIOS_DIVISAO, CATEGORIAS_CARRO, db, setOnSave, save, replaceDb, resetAll, add, update, remove, removeWhere, get, ui, applyRules };
+return { CATEGORIAS_DESPESA, CATEGORIAS_RECEITA, TIPOS_RECEITA, STATUS_RECEITA, CLASSIFICACAO_DESPESA, STATUS_DESPESA, STATUS_REEMBOLSO, FORMAS_PAGAMENTO, PERIODICIDADES, TIPOS_INVESTIMENTO, OBJETIVOS_INVESTIMENTO, CRITERIOS_DIVISAO, CATEGORIAS_CARRO, NAV_SECTIONS, db, setOnSave, save, replaceDb, resetAll, add, update, remove, removeWhere, get, SEMPRE_VISIVEIS, isSectionVisible, ui, applyRules };
 })();
 
 __m['sync'] = (() => {
@@ -2167,6 +2217,18 @@ function card(title, ...children) {
     title ? h('h2', { class: 'card-title' }, title) : null, ...children);
 }
 
+// ---- Destaque do número mais importante de uma tela (hierarquia visual: um único
+// valor grande acima do resto, em vez de tudo com o mesmo peso). Verde por padrão;
+// `bad: true` troca pro tom de alerta — mesma linguagem de cor dos badges/stat-cards.
+function heroStat(label, value, { sub = '', bad = false, onclick } = {}) {
+  const el = h('div', { class: `card hero-stat ${bad ? 'hero-stat-bad' : ''} ${onclick ? 'clickable' : ''}` },
+    h('div', { class: 'stat-label' }, label),
+    h('div', { class: 'hero-stat-value' }, typeof value === 'number' ? fmt(value) : value),
+    sub ? h('div', { class: 'stat-sub' }, sub) : null);
+  if (onclick) el.addEventListener('click', onclick);
+  return el;
+}
+
 // ---- Bloco colapsável de alto nível (ex.: seções do Dashboard) ----
 // Diferente de card(): agrupa vários cards/gráficos sob um título com peso visual maior,
 // com opção de recolher a seção inteira. Aberta por padrão.
@@ -2200,16 +2262,16 @@ function rowActions(...btns) {
     h('button', { class: 'icon-btn', title: title || label, onclick: fn }, label)));
 }
 
-return { modal, formModal, confirmModal, table, searchableTable, badge, statCard, card, section, alertBanner, toast, rowActions };
+return { modal, formModal, confirmModal, table, searchableTable, badge, statCard, card, heroStat, section, alertBanner, toast, rowActions };
 })();
 
 __m['contas'] = (() => {
 // Contas bancárias: cadastro simples e saldo sempre calculado ao vivo (saldo inicial +
 // receitas recebidas + despesas pagas vinculadas + conciliações manuais).
-const { h, fmt, todayISO } = __m['utils'];
+const { h, fmt, todayISO, sum } = __m['utils'];
 const { db, add, update, remove } = __m['store'];
 const { accountBalance } = __m['calc'];
-const { card, table, formModal, confirmModal, rowActions, statCard, toast } = __m['ui'];
+const { card, table, formModal, confirmModal, rowActions, statCard, heroStat, toast } = __m['ui'];
 
 // Nome de exibição de uma conta: "Apelido — Banco" (ou só o banco, se não tiver apelido).
 function contaLabel(a) {
@@ -2243,6 +2305,11 @@ function conciliarModal(conta, rerender) {
 }
 
 function render(el, rerender) {
+  if (db.accounts.length) {
+    const total = sum(db.accounts, a => accountBalance(a.id));
+    el.append(heroStat('Saldo total em contas', total, { bad: total < 0 }));
+  }
+
   el.append(card(null,
     h('div', { class: 'card-head' },
       h('h2', { class: 'card-title' }, 'Contas bancárias'),
@@ -2272,7 +2339,7 @@ function render(el, rerender) {
               remove('accounts', a.id);
               rerender();
             }), 'Excluir']), right: true },
-      ], db.accounts)));
+      ], db.accounts, { responsive: true })));
   }
 }
 
@@ -2283,9 +2350,9 @@ __m['dashboard'] = (() => {
 // Dashboard mensal: visão consolidada agrupada em blocos com hierarquia visual clara,
 // em vez de uma lista longa de cards soltos.
 const { h, fmt, fmtPct, ymAdd, ymShort } = __m['utils'];
-const { ui, db } = __m['store'];
+const { ui, db, isSectionVisible } = __m['store'];
 const { monthSummary, commitmentBreakdown, expensesByCategory, alertsFor, futureInstallmentsTotal, accountBalance, topCategoriesComparison, monthSummary: ms, } = __m['calc'];
-const { statCard, card, section, alertBanner, table } = __m['ui'];
+const { statCard, card, section, heroStat, alertBanner, table } = __m['ui'];
 const { donut, hstack, lines, bars, CHART_COLORS } = __m['charts'];
 const { contaLabel } = __m['contas'];
 
@@ -2296,6 +2363,12 @@ function render(el) {
   const tone = v => v < 0 ? 'tone-bad' : 'tone-ok';
 
   el.append(alertBanner(alerts) || '');
+
+  // ---- O número mais importante da tela, em destaque acima de tudo ----
+  el.append(heroStat('Saldo livre real do mês', s.saldoLivreReal, {
+    sub: 'o que sobra da sua renda segura depois de todos os compromissos',
+    bad: s.saldoLivreReal < 0,
+  }));
 
   // ---- Minhas Contas ----
   el.append(section('🏛️', 'Minhas Contas',
@@ -2362,11 +2435,12 @@ function render(el) {
 
   // ---- A receber e investir ----
   el.append(section('💰', 'A receber e investir',
-    h('div', { class: 'grid grid-cards' },
+    h('div', { class: 'grid grid-cards' }, [
       statCard('Reembolsos a receber', s.reembolsosAReceber, { tone: s.reembolsosAReceber > 0 ? 'tone-warn' : '', onclick: () => location.hash = '#/reembolsos' }),
       statCard('Investimentos do mês', s.investimentos, { sub: `realizado: ${fmt(s.investRealizado)}`, onclick: () => location.hash = '#/investimentos' }),
-      statCard('Provisões do mês', s.provisoes, { onclick: () => location.hash = '#/provisoes' }),
-      statCard('Contas recorrentes do mês', s.recorrentes, { onclick: () => location.hash = '#/recorrentes' }))));
+      isSectionVisible('provisoes') ? statCard('Provisões do mês', s.provisoes, { onclick: () => location.hash = '#/provisoes' }) : null,
+      statCard('Contas recorrentes do mês', s.recorrentes, { onclick: () => location.hash = '#/recorrentes' }),
+    ].filter(Boolean))));
 }
 
 // Barra de progresso (gasto atual / limite definido) por categoria com orçamento configurado.
@@ -2407,7 +2481,7 @@ function topCategoriesCard(ym) {
       { label: 'Variação', render: r => h('span', {
           style: `color:${r.delta > 0 ? '#C0504D' : r.delta < 0 ? '#2E7D53' : 'inherit'};font-weight:600`,
         }, `${r.delta > 0 ? '▲' : r.delta < 0 ? '▼' : '—'} ${fmt(Math.abs(r.delta))}`), right: true },
-    ], top));
+    ], top, { responsive: true }));
 }
 
 return { render };
@@ -2492,7 +2566,7 @@ __m['receitas'] = (() => {
 const { h, fmt, todayISO, sum } = __m['utils'];
 const { db, ui, add, update, remove, save, TIPOS_RECEITA, STATUS_RECEITA } = __m['store'];
 const { monthIncomes } = __m['calc'];
-const { card, table, badge, formModal, confirmModal, rowActions, statCard, toast } = __m['ui'];
+const { card, table, badge, formModal, confirmModal, rowActions, statCard, heroStat, toast } = __m['ui'];
 const { contaLabel } = __m['contas'];
 
 const TIPO_LABEL = Object.fromEntries(TIPOS_RECEITA);
@@ -2520,8 +2594,9 @@ function render(el, rerender) {
   let incomes = monthIncomes(ym).sort((a, b) => a.data.localeCompare(b.data));
   if (filtro.tipo) incomes = incomes.filter(i => i.tipo === filtro.tipo);
 
+  el.append(heroStat('Total do mês', sum(incomes, i => i.valor)));
+
   el.append(h('div', { class: 'grid grid-cards' },
-    statCard('Total do mês', sum(incomes, i => i.valor)),
     statCard('Recebido', sum(incomes.filter(i => i.status === 'recebida'), i => i.valor), { tone: 'tone-ok' }),
     statCard('Previsto', sum(incomes.filter(i => i.status === 'prevista'), i => i.valor)),
     statCard('Segura', sum(incomes.filter(i => i.tipo === 'segura'), i => i.valor))));
@@ -2550,7 +2625,7 @@ function render(el, rerender) {
       { label: 'Valor', k: 'valor', money: true },
       { label: 'Status', render: r => badge(r.status) },
       { label: '', render: r => actions(r, rerender), right: true },
-    ], incomes, { empty: 'Nenhuma receita neste mês para este filtro.' })));
+    ], incomes, { empty: 'Nenhuma receita neste mês para este filtro.', responsive: true })));
 }
 
 function actions(r, rerender) {
@@ -2599,7 +2674,7 @@ __m['despesas'] = (() => {
 const { h, fmt, todayISO, parseDate, parseTable, parseMoney, sum, uid } = __m['utils'];
 const { db, ui, add, update, remove, removeWhere, save, applyRules, CLASSIFICACAO_DESPESA, STATUS_DESPESA, FORMAS_PAGAMENTO, } = __m['store'];
 const { monthExpenses, expenseNet } = __m['calc'];
-const { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } = __m['ui'];
+const { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, heroStat, toast } = __m['ui'];
 const { contaLabel } = __m['contas'];
 
 // Recalcula o valor a reembolsar (R$) a partir do percentual × valor total — usado nos
@@ -2722,9 +2797,10 @@ function render(el, rerender) {
   const bruta = sum(list, e => e.valorTotal);
   const liquida = sum(list, expenseNet);
 
+  el.append(heroStat('Despesa líquida real do mês', liquida, { sub: 'descontando reembolsos — o que realmente pesa no seu orçamento' }));
+
   el.append(h('div', { class: 'grid grid-cards' },
     statCard('Despesa bruta do mês', bruta, { sub: 'tudo que você paga' }),
-    statCard('Despesa líquida real', liquida, { sub: 'descontando reembolsos', tone: 'tone-accent' }),
     statCard('Pagas', sum(list.filter(e => e.status === 'pago'), e => e.valorTotal), { tone: 'tone-ok' }),
     statCard('Em aberto', sum(list.filter(e => ['previsto', 'vencido', 'parcial'].includes(e.status)), e => e.valorTotal))));
 
@@ -2760,7 +2836,7 @@ function render(el, rerender) {
       { label: 'Pagamento', k: 'formaPagamento' },
       { label: 'Status', render: e => badge(e.status) },
       { label: '', render: e => actions(e, rerender), right: true },
-    ], list, { empty: 'Nenhuma despesa neste mês.' })));
+    ], list, { empty: 'Nenhuma despesa neste mês.', responsive: true })));
 }
 
 function actions(e, rerender) {
@@ -2894,9 +2970,9 @@ __m['cartoes'] = (() => {
 // Cartões e compras parceladas: cartões recolhidos por padrão, com abas e busca dentro
 // de cada um. O mapa de parcelamentos futuros mora em tela própria (mapaParcelamentos.js).
 const { h, fmt, todayISO, ymNow, ymAdd, ymDiff, ymShort, ymLabel, dateInMonth, sum, uid, parseTable, parseMoney, parseYm } = __m['utils'];
-const { db, ui, add, update, remove, removeWhere, save, STATUS_DESPESA } = __m['store'];
+const { db, ui, add, update, remove, removeWhere, save, STATUS_DESPESA, isSectionVisible } = __m['store'];
 const { cardInvoice, monthSummary } = __m['calc'];
-const { card, table, searchableTable, badge, formModal, confirmModal, modal, rowActions, statCard, toast } = __m['ui'];
+const { card, table, searchableTable, badge, formModal, confirmModal, modal, rowActions, statCard, heroStat, toast } = __m['ui'];
 const { fields: despesaFields, saveExpense } = __m['despesas'];
 const { contaLabel } = __m['contas'];
 
@@ -3179,6 +3255,15 @@ function render(el, rerender) {
   const ym = ui.month;
   ensureReimbursementSync();
 
+  // ---- Faturas por cartão no mês: cada cartão inicia recolhido, mostrando só o essencial ----
+  const cartoesAtivos = db.cards.filter(c => c.ativo !== false);
+  const idsCartoesAtivos = new Set(cartoesAtivos.map(c => c.id));
+
+  if (cartoesAtivos.length) {
+    const totalFaturas = sum(cartoesAtivos, c => cardInvoice(c.id, ym).total);
+    el.append(heroStat('Total das faturas do mês', totalFaturas, { sub: `somando ${cartoesAtivos.length} cartão(ões) ativo(s)` }));
+  }
+
   // ---- Ações principais (fixas no topo, antes de qualquer fatura) ----
   el.append(card(null, h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
     h('button', { class: 'btn btn-primary', onclick: () => formModal('Nova compra parcelada', purchaseFields(), {}, vals => {
@@ -3188,18 +3273,14 @@ function render(el, rerender) {
     }, { wide: true }) }, '+ Nova compra parcelada'),
     h('button', { class: 'btn btn-secondary', onclick: () => importModal(rerender) }, '⬆ Importar parcelamentos em massa'),
     h('button', { class: 'btn btn-ghost', onclick: () => addCard(rerender) }, '+ Novo cartão'),
-    h('button', { class: 'btn btn-ghost', onclick: () => location.hash = '#/simulador' }, '🧮 Simular nova compra'),
-    h('button', { class: 'btn btn-ghost', onclick: () => location.hash = '#/mapa-parcelamentos' }, '🗺️ Mapa de parcelamentos futuros'))));
+    isSectionVisible('simulador') ? h('button', { class: 'btn btn-ghost', onclick: () => location.hash = '#/simulador' }, '🧮 Simular nova compra') : null,
+    isSectionVisible('mapa-parcelamentos') ? h('button', { class: 'btn btn-ghost', onclick: () => location.hash = '#/mapa-parcelamentos' }, '🗺️ Mapa de parcelamentos futuros') : null)));
 
   if (!db.cards.length) {
     el.append(card('Comece cadastrando um cartão',
       h('p', { class: 'stat-sub' }, 'Cadastre seus cartões de crédito para acompanhar faturas e distribuir parcelas automaticamente.'),
       h('button', { class: 'btn btn-primary', onclick: () => addCard(rerender) }, '+ Cadastrar cartão')));
   }
-
-  // ---- Faturas por cartão no mês: cada cartão inicia recolhido, mostrando só o essencial ----
-  const cartoesAtivos = db.cards.filter(c => c.ativo !== false);
-  const idsCartoesAtivos = new Set(cartoesAtivos.map(c => c.id));
 
   if (cartoesAtivos.length > 1) {
     el.append(h('div', { style: 'display:flex;gap:8px;margin:-2px 0 14px' },
@@ -3510,7 +3591,7 @@ __m['recorrentes'] = (() => {
 const { h, fmt, todayISO, ymNow, sum } = __m['utils'];
 const { db, ui, add, update, remove, save, PERIODICIDADES, FORMAS_PAGAMENTO } = __m['store'];
 const { recurringOccurrences } = __m['calc'];
-const { card, table, badge, formModal, confirmModal, rowActions, statCard, toast } = __m['ui'];
+const { card, table, badge, formModal, confirmModal, rowActions, statCard, heroStat, toast } = __m['ui'];
 const { contaLabel } = __m['contas'];
 
 function fields() {
@@ -3534,8 +3615,9 @@ function render(el, rerender) {
   const ym = ui.month;
   const occs = recurringOccurrences(ym);
 
+  el.append(heroStat('Total do mês em contas recorrentes', sum(occs, o => o.valor)));
+
   el.append(h('div', { class: 'grid grid-cards' },
-    statCard('Total do mês', sum(occs, o => o.valor)),
     statCard('Pagas', sum(occs.filter(o => o.status === 'pago'), o => o.valor), { tone: 'tone-ok' }),
     statCard('Em aberto', sum(occs.filter(o => o.status !== 'pago'), o => o.valor)),
     statCard('Vencidas', sum(occs.filter(o => o.status === 'vencido'), o => o.valor),
@@ -3554,7 +3636,7 @@ function render(el, rerender) {
       { label: 'Valor', k: 'valor', money: true },
       { label: 'Status', render: o => badge(o.status) },
       { label: '', render: o => occActions(o, rerender), right: true },
-    ], occs, { empty: 'Nenhuma conta recorrente neste mês.' })));
+    ], occs, { empty: 'Nenhuma conta recorrente neste mês.', responsive: true })));
 
   // Regras cadastradas
   el.append(card('Contas recorrentes cadastradas',
@@ -3570,7 +3652,7 @@ function render(el, rerender) {
           [r.status === 'ativa' ? '⏸' : '▶️', () => { update('recurring', r.id, { status: r.status === 'ativa' ? 'pausada' : 'ativa' }); rerender(); }, r.status === 'ativa' ? 'Pausar' : 'Reativar'],
           ['✏️', () => formModal('Editar conta recorrente', fields(), r, vals => { update('recurring', r.id, vals); rerender(); }), 'Editar'],
           ['🗑', () => confirmModal(`Excluir a conta recorrente "${r.nome}"?`, () => { remove('recurring', r.id); rerender(); }), 'Excluir']), right: true },
-    ], db.recurring, { empty: 'Nenhuma conta recorrente cadastrada. Comece pelo aluguel, condomínio, luz e assinaturas.' })));
+    ], db.recurring, { empty: 'Nenhuma conta recorrente cadastrada. Comece pelo aluguel, condomínio, luz e assinaturas.', responsive: true })));
 }
 
 function occActions(o, rerender) {
@@ -3679,7 +3761,7 @@ function render(el, rerender) {
           ['✏️', () => formModal('Editar provisão', fields(), p, vals => { update('provisions', p.id, vals); rerender(); }), 'Editar'],
           [p.status === 'ativa' ? '⏸' : '▶️', () => { update('provisions', p.id, { status: p.status === 'ativa' ? 'pausada' : 'ativa' }); rerender(); }, p.status === 'ativa' ? 'Pausar' : 'Reativar'],
           ['🗑', () => confirmModal(`Excluir a provisão "${p.nome}"?`, () => { remove('provisions', p.id); rerender(); }), 'Excluir']), right: true },
-    ], db.provisions, { empty: 'Nenhuma provisão. Crie provisões para IPVA, seguro, viagens e presentes — assim nada vira surpresa.' })));
+    ], db.provisions, { empty: 'Nenhuma provisão. Crie provisões para IPVA, seguro, viagens e presentes — assim nada vira surpresa.', responsive: true })));
 }
 
 // Quanto deveria estar acumulado até este mês, mantendo o ritmo sugerido.
@@ -3714,7 +3796,7 @@ __m['investimentos'] = (() => {
 const { h, fmt, todayISO, ymOf, sum } = __m['utils'];
 const { db, ui, add, update, remove, TIPOS_INVESTIMENTO, OBJETIVOS_INVESTIMENTO } = __m['store'];
 const { totalInvested, reserveTotal, monthInvestDone, monthInvestPlanned, monthInvestRedemptions } = __m['calc'];
-const { card, table, formModal, confirmModal, rowActions, statCard, toast, alertBanner } = __m['ui'];
+const { card, table, formModal, confirmModal, rowActions, statCard, heroStat, toast, alertBanner } = __m['ui'];
 const { donut } = __m['charts'];
 
 function fields() {
@@ -3742,8 +3824,9 @@ function render(el, rerender) {
     el.append(alertBanner([{ level: 'aviso', msg: `Sua reserva (${fmt(reserva)}) está abaixo da meta mínima definida (${fmt(metaMin)}).` }]));
   }
 
+  el.append(heroStat('Total investido', totalInvested()));
+
   el.append(h('div', { class: 'grid grid-cards' },
-    statCard('Total investido', totalInvested(), { tone: 'tone-accent' }),
     statCard('Reserva de emergência', reserva, {
       sub: metaMin ? `meta: ${fmt(metaMin)}${db.settings.metaReservaMax ? ' – ' + fmt(db.settings.metaReservaMax) : ''} (${metaMin ? Math.min(999, Math.round(reserva / metaMin * 100)) : 0}%)` : 'defina a meta em Configurações',
       tone: metaMin && reserva < metaMin ? 'tone-warn' : 'tone-ok',
@@ -3781,7 +3864,7 @@ function render(el, rerender) {
           ['💸', () => resgateModal(i, rerender), 'Registrar resgate'],
           ['✏️', () => formModal('Editar investimento', fields(), i, vals => { update('investments', i.id, vals); rerender(); }), 'Editar'],
           ['🗑', () => confirmModal(`Excluir o investimento "${i.produto}"?`, () => { remove('investments', i.id); rerender(); }), 'Excluir']), right: true },
-    ], db.investments, { empty: 'Nenhum investimento cadastrado. Separe o dinheiro investido do disponível para ver sua evolução patrimonial.' })));
+    ], db.investments, { empty: 'Nenhum investimento cadastrado. Separe o dinheiro investido do disponível para ver sua evolução patrimonial.', responsive: true })));
 
   // Aportes do mês
   const aportes = db.investContrib.filter(c => ymOf(c.data) === ym);
@@ -3797,7 +3880,7 @@ function render(el, rerender) {
             remove('investContrib', a.id);
             rerender();
           }), 'Excluir']), right: true },
-      ], aportes)));
+      ], aportes, { responsive: true })));
   }
 
   // Resgates do mês — o valor já entrou em Receitas como "Resgate de Investimento",
@@ -3818,7 +3901,7 @@ function render(el, rerender) {
             remove('investRedemptions', r.id);
             rerender();
           }), 'Excluir']), right: true },
-      ], resgates)));
+      ], resgates, { responsive: true })));
   }
 }
 
@@ -3893,7 +3976,7 @@ const { h, fmt, fmtDate, todayISO, sum, ymShort, ymLabel, ymAdd } = __m['utils']
 const { db, ui, add, update, remove, save, STATUS_REEMBOLSO, CRITERIOS_DIVISAO, FORMAS_PAGAMENTO } = __m['store'];
 const { reimbPending, reimbOutstanding, reimbMonth } = __m['calc'];
 const { ensureReimbursementSync } = __m['cartoes'];
-const { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, toast } = __m['ui'];
+const { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, heroStat, toast } = __m['ui'];
 const { bars, CHART_COLORS } = __m['charts'];
 const sync = __m['sync'];
 
@@ -4019,9 +4102,7 @@ function render(el, rerender) {
   const doMes = ativos.filter(r => reimbMonth(r) === ym);
 
   // ---- Total geral em destaque (item mais consultado) ----
-  el.append(h('div', { class: 'card hero-stat' },
-    h('div', { class: 'stat-label' }, 'Total a receber (todos os meses)'),
-    h('div', { class: 'hero-stat-value' }, fmt(reimbOutstanding()))));
+  el.append(heroStat('Total a receber (todos os meses)', reimbOutstanding()));
 
   el.append(h('div', { class: 'grid grid-cards' },
     statCard(`Pendente em ${ymLabel(ym)}`, sum(doMes, reimbPending), { tone: sum(doMes, reimbPending) > 0 ? 'tone-warn' : 'tone-ok' }),
@@ -4387,7 +4468,7 @@ function dayModal(iso, events) {
       { label: 'Item', k: 'titulo' },
       { label: 'Valor', k: 'valor', money: true },
       { label: 'Status', render: e => badge(e.status) },
-    ], events),
+    ], events, { responsive: true }),
     h('div', { class: 'stat-sub', style: 'margin-top:10px' },
       `Total do dia: ${fmt(sum(events.filter(e => e.tipo !== 'receita'), e => e.valor))} em compromissos · ${fmt(sum(events.filter(e => e.tipo === 'receita'), e => e.valor))} em receitas.`)));
 }
@@ -4902,7 +4983,7 @@ function render(el, rerender) {
       { label: 'Valor', k: 'valor', money: true },
       { label: 'Status', render: i => badge(i.status) },
     ], items.sort((a, b) => a.data.localeCompare(b.data)),
-    { empty: `Nenhuma despesa do carro neste mês. Categorias incluídas: ${ativas.join(', ') || 'nenhuma selecionada acima'}. Subcategorias sugeridas: ${SUBCATS.join(', ')}.` })));
+    { empty: `Nenhuma despesa do carro neste mês. Categorias incluídas: ${ativas.join(', ') || 'nenhuma selecionada acima'}. Subcategorias sugeridas: ${SUBCATS.join(', ')}.`, responsive: true })));
 
   if (provCarro.length) {
     el.append(card('Provisões ligadas ao carro',
@@ -4912,7 +4993,7 @@ function render(el, rerender) {
         { label: 'Mensal', render: p => fmt(provisionMonthly(p, ym)), right: true },
         { label: 'Acumulado', k: 'valorAcumulado', money: true },
         { label: 'Status', render: p => badge(p.status) },
-      ], provCarro)));
+      ], provCarro, { responsive: true })));
   }
 }
 
@@ -4997,7 +5078,7 @@ return { render };
 __m['config'] = (() => {
 // Configurações: metas, categorias, bancos, pessoas, regras e dados.
 const { h, fmt, downloadFile, todayISO, ymNow, ymAdd, ymLabel, ymOf, uid } = __m['utils'];
-const { db, save, add, update, remove, resetAll } = __m['store'];
+const { db, save, add, update, remove, resetAll, NAV_SECTIONS, SEMPRE_VISIVEIS } = __m['store'];
 const { card, table, formModal, confirmModal, rowActions, toast, badge, modal } = __m['ui'];
 const { generateInstallments } = __m['cartoes'];
 const { addCard } = __m['cartoes'];
@@ -5030,7 +5111,30 @@ function render(el, rerender) {
           const v = Number(db.settings[m[0]]) || 0;
           return m[0].includes('Pct') || m[0] === 'limiteComprometimento' ? `${v}%` : fmt(v);
         }, right: true },
-    ], metas)));
+    ], metas, { responsive: true })));
+
+  // ---- Navegação: esconder/mostrar seções do menu sem apagar nada ----
+  el.append(card(null,
+    h('h2', { class: 'card-title' }, '🧭 Navegação'),
+    h('p', { class: 'stat-sub' },
+      'Esconda do menu as seções que você não usa agora, pra simplificar a navegação. Nada é apagado — o histórico continua salvo e você pode reativar qualquer seção aqui a qualquer momento.'),
+    h('div', { class: 'nav-toggle-list' },
+      NAV_SECTIONS.filter(([path]) => !SEMPRE_VISIVEIS.includes(path)).map(([path, label, icon]) => {
+        const visivel = !db.settings.hiddenSections.includes(path);
+        return h('label', { class: 'nav-toggle-item' },
+          h('input', {
+            type: 'checkbox', checked: visivel,
+            onchange: e => {
+              db.settings.hiddenSections = e.target.checked
+                ? db.settings.hiddenSections.filter(p => p !== path)
+                : [...db.settings.hiddenSections, path];
+              save();
+              rerender();
+            },
+          }),
+          h('span', { class: 'nav-toggle-icon' }, icon),
+          h('span', {}, label));
+      }))));
 
   // ---- Orçamento por categoria ----
   el.append(card(null,
@@ -5056,7 +5160,7 @@ function render(el, rerender) {
           if (b) btns.push(['🗑', () => confirmModal(`Remover o limite de ${c.nome}?`, () => { remove('categoryBudgets', b.id); rerender(); }), 'Remover limite']);
           return rowActions(...btns);
         }, right: true },
-    ], db.categoriesExpense)));
+    ], db.categoriesExpense, { responsive: true })));
 
   // ---- Pessoas para reembolso ----
   const pessoaFields = [
@@ -5076,7 +5180,7 @@ function render(el, rerender) {
       { label: '', render: p => rowActions(
           ['✏️', () => formModal('Editar pessoa', pessoaFields, p, vals => { update('people', p.id, vals); rerender(); }), 'Editar'],
           ['🗑', () => confirmModal(`Excluir ${p.nome}? Os reembolsos vinculados serão mantidos sem pessoa.`, () => { remove('people', p.id); rerender(); }), 'Excluir']), right: true },
-    ], db.people, { empty: 'Cadastre as pessoas que devem reembolsos (irmão, marido…).' })));
+    ], db.people, { empty: 'Cadastre as pessoas que devem reembolsos (irmão, marido…).', responsive: true })));
 
   // ---- Bancos ----
   el.append(card(null,
@@ -5090,7 +5194,7 @@ function render(el, rerender) {
       { label: 'Banco', k: 'nome' },
       { label: 'Cartões vinculados', render: b => db.cards.filter(c => c.banco === b.nome).map(c => c.nome).join(', ') || '—' },
       { label: '', render: b => rowActions(['🗑', () => confirmModal(`Excluir o banco ${b.nome}?`, () => { remove('banks', b.id); rerender(); }), 'Excluir']), right: true },
-    ], db.banks)));
+    ], db.banks, { responsive: true })));
 
   // ---- Categorias ----
   const catFields = [
@@ -5114,7 +5218,7 @@ function render(el, rerender) {
             rerender();
           }), 'Editar'],
           ['🗑', () => confirmModal(`Excluir a categoria ${c.nome}?`, () => { remove('categoriesExpense', c.id); rerender(); }), 'Excluir']), right: true },
-    ], db.categoriesExpense)));
+    ], db.categoriesExpense, { responsive: true })));
 
   // ---- Regras automáticas de categorização ----
   const ruleFields = [
@@ -5135,7 +5239,7 @@ function render(el, rerender) {
       { label: '', render: r => rowActions(
           ['✏️', () => formModal('Editar regra', ruleFields, r, vals => { update('rules', r.id, vals); rerender(); }), 'Editar'],
           ['🗑', () => confirmModal('Excluir esta regra?', () => { remove('rules', r.id); rerender(); }), 'Excluir']), right: true },
-    ], db.rules, { empty: 'Nenhuma regra. As regras aceleram o cadastro sugerindo categorias automaticamente.' })));
+    ], db.rules, { empty: 'Nenhuma regra. As regras aceleram o cadastro sugerindo categorias automaticamente.', responsive: true })));
 
   // ---- Sincronização na nuvem (Supabase) ----
   el.append(cloudCard(rerender));
@@ -5185,7 +5289,7 @@ function checarReceitasDuplicadas(rerender) {
       { label: 'Mês', render: g => ymLabel(ymOf(g[0].data)) },
       { label: 'Valor', render: g => fmt(g[0].valor), right: true },
       { label: 'Cópias', render: g => String(g.length), right: true },
-    ], grupos),
+    ], grupos, { responsive: true }),
     h('div', { class: 'modal-actions' },
       h('button', { class: 'btn btn-ghost', onclick: () => overlay.remove() }, 'Cancelar'),
       h('button', { class: 'btn btn-danger', onclick: () => {
@@ -5367,7 +5471,7 @@ return { render, loginPrompt };
 __m['app'] = (() => {
 // Shell do app: navegação, seletor de mês, onboarding e roteamento.
 const { h, ymLabel, ymAdd } = __m['utils'];
-const { db, ui, save } = __m['store'];
+const { db, ui, save, isSectionVisible } = __m['store'];
 const { formModal, modal, toast } = __m['ui'];
 const sync = __m['sync'];
 
@@ -5421,16 +5525,17 @@ function render() {
   const app = document.getElementById('app');
   app.innerHTML = '';
 
-  // Sidebar (desktop)
+  // Sidebar (desktop) — só rotas visíveis (Configurações → Navegação controla o resto,
+  // sem apagar o código nem os dados da rota escondida).
   const sidebar = h('nav', { class: 'sidebar' },
     h('div', { class: 'logo' }, '🌿 Meu Orçamento', h('small', {}, 'Inteligente')),
-    ROUTES.map(r => h('a', {
+    ROUTES.filter(r => isSectionVisible(r.path)).map(r => h('a', {
       class: `nav-link ${r.path === route.path ? 'active' : ''}`, href: `#/${r.path}`,
     }, h('span', { class: 'nav-icon' }, r.icon), r.label)));
 
   // Menu inferior (mobile)
   const bottomNav = h('nav', { class: 'bottom-nav' },
-    MOBILE_NAV.map(p => {
+    MOBILE_NAV.filter(isSectionVisible).map(p => {
       const r = ROUTES.find(x => x.path === p);
       return h('a', { class: r.path === route.path ? 'active' : '', href: `#/${r.path}` },
         h('span', { class: 'nav-icon' }, r.icon), r.label.split(' ')[0]);

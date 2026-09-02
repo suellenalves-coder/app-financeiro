@@ -1,6 +1,6 @@
 // Configurações: metas, categorias, bancos, pessoas, regras e dados.
 import { h, fmt, downloadFile, todayISO, ymNow, ymAdd, ymLabel, ymOf, uid } from '../utils.js';
-import { db, save, add, update, remove, resetAll } from '../store.js';
+import { db, save, add, update, remove, resetAll, NAV_SECTIONS, SEMPRE_VISIVEIS } from '../store.js';
 import { card, table, formModal, confirmModal, rowActions, toast, badge, modal } from '../ui.js';
 import { generateInstallments } from './cartoes.js';
 import { addCard } from './cartoes.js';
@@ -33,7 +33,30 @@ export function render(el, rerender) {
           const v = Number(db.settings[m[0]]) || 0;
           return m[0].includes('Pct') || m[0] === 'limiteComprometimento' ? `${v}%` : fmt(v);
         }, right: true },
-    ], metas)));
+    ], metas, { responsive: true })));
+
+  // ---- Navegação: esconder/mostrar seções do menu sem apagar nada ----
+  el.append(card(null,
+    h('h2', { class: 'card-title' }, '🧭 Navegação'),
+    h('p', { class: 'stat-sub' },
+      'Esconda do menu as seções que você não usa agora, pra simplificar a navegação. Nada é apagado — o histórico continua salvo e você pode reativar qualquer seção aqui a qualquer momento.'),
+    h('div', { class: 'nav-toggle-list' },
+      NAV_SECTIONS.filter(([path]) => !SEMPRE_VISIVEIS.includes(path)).map(([path, label, icon]) => {
+        const visivel = !db.settings.hiddenSections.includes(path);
+        return h('label', { class: 'nav-toggle-item' },
+          h('input', {
+            type: 'checkbox', checked: visivel,
+            onchange: e => {
+              db.settings.hiddenSections = e.target.checked
+                ? db.settings.hiddenSections.filter(p => p !== path)
+                : [...db.settings.hiddenSections, path];
+              save();
+              rerender();
+            },
+          }),
+          h('span', { class: 'nav-toggle-icon' }, icon),
+          h('span', {}, label));
+      }))));
 
   // ---- Orçamento por categoria ----
   el.append(card(null,
@@ -59,7 +82,7 @@ export function render(el, rerender) {
           if (b) btns.push(['🗑', () => confirmModal(`Remover o limite de ${c.nome}?`, () => { remove('categoryBudgets', b.id); rerender(); }), 'Remover limite']);
           return rowActions(...btns);
         }, right: true },
-    ], db.categoriesExpense)));
+    ], db.categoriesExpense, { responsive: true })));
 
   // ---- Pessoas para reembolso ----
   const pessoaFields = [
@@ -79,7 +102,7 @@ export function render(el, rerender) {
       { label: '', render: p => rowActions(
           ['✏️', () => formModal('Editar pessoa', pessoaFields, p, vals => { update('people', p.id, vals); rerender(); }), 'Editar'],
           ['🗑', () => confirmModal(`Excluir ${p.nome}? Os reembolsos vinculados serão mantidos sem pessoa.`, () => { remove('people', p.id); rerender(); }), 'Excluir']), right: true },
-    ], db.people, { empty: 'Cadastre as pessoas que devem reembolsos (irmão, marido…).' })));
+    ], db.people, { empty: 'Cadastre as pessoas que devem reembolsos (irmão, marido…).', responsive: true })));
 
   // ---- Bancos ----
   el.append(card(null,
@@ -93,7 +116,7 @@ export function render(el, rerender) {
       { label: 'Banco', k: 'nome' },
       { label: 'Cartões vinculados', render: b => db.cards.filter(c => c.banco === b.nome).map(c => c.nome).join(', ') || '—' },
       { label: '', render: b => rowActions(['🗑', () => confirmModal(`Excluir o banco ${b.nome}?`, () => { remove('banks', b.id); rerender(); }), 'Excluir']), right: true },
-    ], db.banks)));
+    ], db.banks, { responsive: true })));
 
   // ---- Categorias ----
   const catFields = [
@@ -117,7 +140,7 @@ export function render(el, rerender) {
             rerender();
           }), 'Editar'],
           ['🗑', () => confirmModal(`Excluir a categoria ${c.nome}?`, () => { remove('categoriesExpense', c.id); rerender(); }), 'Excluir']), right: true },
-    ], db.categoriesExpense)));
+    ], db.categoriesExpense, { responsive: true })));
 
   // ---- Regras automáticas de categorização ----
   const ruleFields = [
@@ -138,7 +161,7 @@ export function render(el, rerender) {
       { label: '', render: r => rowActions(
           ['✏️', () => formModal('Editar regra', ruleFields, r, vals => { update('rules', r.id, vals); rerender(); }), 'Editar'],
           ['🗑', () => confirmModal('Excluir esta regra?', () => { remove('rules', r.id); rerender(); }), 'Excluir']), right: true },
-    ], db.rules, { empty: 'Nenhuma regra. As regras aceleram o cadastro sugerindo categorias automaticamente.' })));
+    ], db.rules, { empty: 'Nenhuma regra. As regras aceleram o cadastro sugerindo categorias automaticamente.', responsive: true })));
 
   // ---- Sincronização na nuvem (Supabase) ----
   el.append(cloudCard(rerender));
@@ -188,7 +211,7 @@ function checarReceitasDuplicadas(rerender) {
       { label: 'Mês', render: g => ymLabel(ymOf(g[0].data)) },
       { label: 'Valor', render: g => fmt(g[0].valor), right: true },
       { label: 'Cópias', render: g => String(g.length), right: true },
-    ], grupos),
+    ], grupos, { responsive: true }),
     h('div', { class: 'modal-actions' },
       h('button', { class: 'btn btn-ghost', onclick: () => overlay.remove() }, 'Cancelar'),
       h('button', { class: 'btn btn-danger', onclick: () => {

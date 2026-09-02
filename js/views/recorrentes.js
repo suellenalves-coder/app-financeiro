@@ -2,7 +2,7 @@
 import { h, fmt, todayISO, ymNow, sum } from '../utils.js';
 import { db, ui, add, update, remove, save, PERIODICIDADES, FORMAS_PAGAMENTO } from '../store.js';
 import { recurringOccurrences } from '../calc.js';
-import { card, table, badge, formModal, confirmModal, rowActions, statCard, toast } from '../ui.js';
+import { card, table, badge, formModal, confirmModal, rowActions, statCard, heroStat, toast } from '../ui.js';
 import { contaLabel } from './contas.js';
 
 function fields() {
@@ -26,8 +26,9 @@ export function render(el, rerender) {
   const ym = ui.month;
   const occs = recurringOccurrences(ym);
 
+  el.append(heroStat('Total do mês em contas recorrentes', sum(occs, o => o.valor)));
+
   el.append(h('div', { class: 'grid grid-cards' },
-    statCard('Total do mês', sum(occs, o => o.valor)),
     statCard('Pagas', sum(occs.filter(o => o.status === 'pago'), o => o.valor), { tone: 'tone-ok' }),
     statCard('Em aberto', sum(occs.filter(o => o.status !== 'pago'), o => o.valor)),
     statCard('Vencidas', sum(occs.filter(o => o.status === 'vencido'), o => o.valor),
@@ -46,7 +47,7 @@ export function render(el, rerender) {
       { label: 'Valor', k: 'valor', money: true },
       { label: 'Status', render: o => badge(o.status) },
       { label: '', render: o => occActions(o, rerender), right: true },
-    ], occs, { empty: 'Nenhuma conta recorrente neste mês.' })));
+    ], occs, { empty: 'Nenhuma conta recorrente neste mês.', responsive: true })));
 
   // Regras cadastradas
   el.append(card('Contas recorrentes cadastradas',
@@ -62,7 +63,7 @@ export function render(el, rerender) {
           [r.status === 'ativa' ? '⏸' : '▶️', () => { update('recurring', r.id, { status: r.status === 'ativa' ? 'pausada' : 'ativa' }); rerender(); }, r.status === 'ativa' ? 'Pausar' : 'Reativar'],
           ['✏️', () => formModal('Editar conta recorrente', fields(), r, vals => { update('recurring', r.id, vals); rerender(); }), 'Editar'],
           ['🗑', () => confirmModal(`Excluir a conta recorrente "${r.nome}"?`, () => { remove('recurring', r.id); rerender(); }), 'Excluir']), right: true },
-    ], db.recurring, { empty: 'Nenhuma conta recorrente cadastrada. Comece pelo aluguel, condomínio, luz e assinaturas.' })));
+    ], db.recurring, { empty: 'Nenhuma conta recorrente cadastrada. Comece pelo aluguel, condomínio, luz e assinaturas.', responsive: true })));
 }
 
 function occActions(o, rerender) {

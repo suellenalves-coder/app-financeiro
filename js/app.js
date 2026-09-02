@@ -1,6 +1,6 @@
 // Shell do app: navegação, seletor de mês, onboarding e roteamento.
 import { h, ymLabel, ymAdd } from './utils.js';
-import { db, ui, save } from './store.js';
+import { db, ui, save, isSectionVisible } from './store.js';
 import { formModal, modal, toast } from './ui.js';
 import * as sync from './sync.js';
 
@@ -54,16 +54,17 @@ export function render() {
   const app = document.getElementById('app');
   app.innerHTML = '';
 
-  // Sidebar (desktop)
+  // Sidebar (desktop) — só rotas visíveis (Configurações → Navegação controla o resto,
+  // sem apagar o código nem os dados da rota escondida).
   const sidebar = h('nav', { class: 'sidebar' },
     h('div', { class: 'logo' }, '🌿 Meu Orçamento', h('small', {}, 'Inteligente')),
-    ROUTES.map(r => h('a', {
+    ROUTES.filter(r => isSectionVisible(r.path)).map(r => h('a', {
       class: `nav-link ${r.path === route.path ? 'active' : ''}`, href: `#/${r.path}`,
     }, h('span', { class: 'nav-icon' }, r.icon), r.label)));
 
   // Menu inferior (mobile)
   const bottomNav = h('nav', { class: 'bottom-nav' },
-    MOBILE_NAV.map(p => {
+    MOBILE_NAV.filter(isSectionVisible).map(p => {
       const r = ROUTES.find(x => x.path === p);
       return h('a', { class: r.path === route.path ? 'active' : '', href: `#/${r.path}` },
         h('span', { class: 'nav-icon' }, r.icon), r.label.split(' ')[0]);

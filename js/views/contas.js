@@ -1,9 +1,9 @@
 // Contas bancárias: cadastro simples e saldo sempre calculado ao vivo (saldo inicial +
 // receitas recebidas + despesas pagas vinculadas + conciliações manuais).
-import { h, fmt, todayISO } from '../utils.js';
+import { h, fmt, todayISO, sum } from '../utils.js';
 import { db, add, update, remove } from '../store.js';
 import { accountBalance } from '../calc.js';
-import { card, table, formModal, confirmModal, rowActions, statCard, toast } from '../ui.js';
+import { card, table, formModal, confirmModal, rowActions, statCard, heroStat, toast } from '../ui.js';
 
 // Nome de exibição de uma conta: "Apelido — Banco" (ou só o banco, se não tiver apelido).
 export function contaLabel(a) {
@@ -37,6 +37,11 @@ function conciliarModal(conta, rerender) {
 }
 
 export function render(el, rerender) {
+  if (db.accounts.length) {
+    const total = sum(db.accounts, a => accountBalance(a.id));
+    el.append(heroStat('Saldo total em contas', total, { bad: total < 0 }));
+  }
+
   el.append(card(null,
     h('div', { class: 'card-head' },
       h('h2', { class: 'card-title' }, 'Contas bancárias'),
@@ -66,6 +71,6 @@ export function render(el, rerender) {
               remove('accounts', a.id);
               rerender();
             }), 'Excluir']), right: true },
-      ], db.accounts)));
+      ], db.accounts, { responsive: true })));
   }
 }
