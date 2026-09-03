@@ -4,7 +4,7 @@ import { h, fmt, fmtDate, todayISO, sum, ymShort, ymLabel, ymAdd } from '../util
 import { db, ui, add, update, remove, save, STATUS_REEMBOLSO, CRITERIOS_DIVISAO, FORMAS_PAGAMENTO } from '../store.js';
 import { reimbPending, reimbOutstanding, reimbMonth } from '../calc.js';
 import { ensureReimbursementSync } from './cartoes.js';
-import { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, heroStat, toast } from '../ui.js';
+import { card, table, badge, formModal, confirmModal, modal, rowActionsMenu, statCard, heroStat, toast } from '../ui.js';
 import { bars, CHART_COLORS } from '../charts.js';
 import * as sync from '../sync.js';
 
@@ -141,6 +141,7 @@ export function render(el, rerender) {
   const porPessoa = db.people.map(p => {
     const items = ativos.filter(r => r.pessoaId === p.id);
     const itemsMes = items.filter(r => reimbMonth(r) === ym);
+    const pendentes = items.filter(r => ['pendente', 'solicitado', 'parcial', 'atrasado'].includes(r.status) && reimbPending(r) > 0);
     return {
       pessoa: p,
       doMes: sum(itemsMes, reimbPending),
@@ -148,6 +149,9 @@ export function render(el, rerender) {
       pendente: sum(items.filter(r => ['pendente', 'atrasado'].includes(r.status)), reimbPending),
       solicitado: sum(items.filter(r => r.status === 'solicitado'), reimbPending),
       total: sum(items.filter(r => ['pendente', 'solicitado', 'parcial', 'atrasado'].includes(r.status)), reimbPending),
+      // Mês mais distante ainda em aberto — dá contexto de escala quando o total geral é
+      // muito maior que o devido neste mês (ex.: um parcelamento longo se estendendo).
+      ultimoMes: pendentes.map(reimbMonth).filter(Boolean).sort().pop() || '',
       ultimaSolicitacao: items.map(r => r.dataSolicitacao).filter(Boolean).sort().pop() || '',
       count: items.length,
     };
@@ -165,7 +169,15 @@ export function render(el, rerender) {
           href: '#', onclick: e => { e.preventDefault(); filtro.pessoaId = x.pessoa.id; rerender(); },
         }, h('b', {}, x.pessoa.nome)) },
       { label: `Deve em ${ymShort(ym)}`, render: x => h('b', {}, fmt(x.doMes)), right: true },
-      { label: 'Total pendente (todos os meses)', render: x => fmt(x.total), right: true },
+      { label: 'Total pendente (todos os meses)', render: x => {
+          // Total bem maior que o devido neste mês, sem contexto, é fácil de estranhar —
+          // um aviso com até quando isso se estende ajuda a entender a escala.
+          const desproporcional = x.ultimoMes && (x.doMes === 0 ? x.total > 0 : x.total / x.doMes > 3);
+          return h('span', {},
+            fmt(x.total),
+            desproporcional ? h('span', { class: 'stat-sub', style: 'display:block;white-space:nowrap' },
+              `⚠️ até ${ymShort(x.ultimoMes)}`) : null);
+        }, right: true },
       { label: 'Última solicitação', render: x => x.ultimaSolicitacao ? fmtDate(x.ultimaSolicitacao) : '—' },
       { label: '', render: x => h('div', { style: 'display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap' },
           h('button', { class: 'btn btn-ghost btn-sm', onclick: () => shareLinkModal(x.pessoa) }, '🔗 Link'),
@@ -204,7 +216,10 @@ function renderTabelaUnificada(ativos, rerender) {
       sel('status', STATUS_REEMBOLSO, 'Todos os status'),
       sel('mes', mesesDisponiveis.map(m => [m, ymLabel(m)]), 'Todos os meses'),
       temFiltro ? h('button', { class: 'btn btn-ghost btn-sm', onclick: () => { filtro.pessoaId = ''; filtro.status = ''; filtro.mes = ''; rerender(); } }, '✕ Limpar filtros') : null),
-    pessoaAtiva ? h('p', { class: 'stat-sub' }, `Filtrando por ${pessoaAtiva.nome} · ${list.length} item(ns) · pendente: ${fmt(sum(list, reimbPending))}`) : null,
+    pessoaAtiva ? h('div', { style: 'margin-bottom:14px' },
+      statCard(`Pendente de ${pessoaAtiva.nome}`, sum(list, reimbPending), {
+        tone: 'tone-warn', sub: `${list.length} item(ns) neste filtro`,
+      })) : null,
     table([
       { label: 'Tipo', render: r => h('span', { class: `badge ${r.purchaseId ? 'badge-info' : 'badge-muted'}` }, r.purchaseId ? 'Parcelado' : 'Avulso') },
       { label: 'Mês', render: r => h(reimbMonth(r) === ui.month ? 'b' : 'span', {}, ymShort(reimbMonth(r))) },
@@ -219,19 +234,23 @@ function renderTabelaUnificada(ativos, rerender) {
     ], list, { empty: ativos.length ? 'Nada encontrado para esse filtro.' : 'Nenhum reembolso registrado.', responsive: true }));
 }
 
+// Editar e excluir ficam sempre visíveis (as ações mais usadas); o resto — ver
+// parcelamento, marcar como solicitado, registrar recebimento — vai atrás do menu "⋮",
+// pra não poluir a linha com muitos ícones de uma vez.
 function actions(r, rerender) {
-  const btns = [];
-  if (r.purchaseId) btns.push(['📋', () => detalhamentoModal(r.purchaseId, rerender), 'Ver parcelamento completo']);
+  const overflow = [];
+  if (r.purchaseId) overflow.push(['📋', () => detalhamentoModal(r.purchaseId, rerender), 'Ver parcelamento completo']);
   if (['pendente', 'atrasado'].includes(r.status)) {
-    btns.push(['📨', () => { update('reimbursements', r.id, { status: 'solicitado', dataSolicitacao: todayISO() }); toast('Marcado como solicitado.'); rerender(); }, 'Marcar como solicitado']);
+    overflow.push(['📨', () => { update('reimbursements', r.id, { status: 'solicitado', dataSolicitacao: todayISO() }); toast('Marcado como solicitado.'); rerender(); }, 'Marcar como solicitado']);
   }
   if (reimbPending(r) > 0 && !['cancelado', 'contestado'].includes(r.status)) {
-    btns.push(['💵', () => receberModal(r, rerender), 'Registrar recebimento']);
+    overflow.push(['💵', () => receberModal(r, rerender), 'Registrar recebimento']);
   }
-  btns.push(
+  const direct = [
     ['✏️', () => formModal('Editar reembolso', fields(), r, vals => { update('reimbursements', r.id, vals); rerender(); }, { wide: true }), 'Editar'],
-    ['🗑', () => confirmModal(`Excluir o reembolso "${r.descricao}"?`, () => { remove('reimbursements', r.id); rerender(); }), 'Excluir']);
-  return rowActions(...btns);
+    ['🗑', () => confirmModal(`Excluir o reembolso "${r.descricao}"?`, () => { remove('reimbursements', r.id); rerender(); }), 'Excluir'],
+  ];
+  return rowActionsMenu(direct, overflow);
 }
 
 function receberModal(r, rerender) {

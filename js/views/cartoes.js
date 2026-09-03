@@ -99,7 +99,8 @@ function syncReimbursementsForPurchase(purchase, installments) {
   for (const r of existing) {
     if (!r.mes && ['pendente', 'solicitado'].includes(r.status)) removeWhere('reimbursements', x => x.id === r.id);
   }
-  const restantes = existing.filter(r => r.mes || ['pago', 'parcial'].includes(r.status));
+  // Reconsulta depois da limpeza acima (existing pode ter itens já removidos).
+  const restantes = db.reimbursements.filter(r => r.purchaseId === purchase.id && (r.mes || ['pago', 'parcial'].includes(r.status)));
 
   const cardObj = db.cards.find(c => c.id === purchase.cartaoId);
   const totalParcelas = installments.length || 1;
@@ -107,14 +108,23 @@ function syncReimbursementsForPurchase(purchase, installments) {
   const mesesAtuais = new Set(installments.map(p => p.mes));
 
   for (const p of installments) {
-    const found = restantes.find(r => r.mes === p.mes);
-    if (found) {
-      if (!['pago', 'parcial'].includes(found.status)) {
-        update('reimbursements', found.id, {
-          pessoaId: purchase.pessoaId, valorAReembolsar: +valorPorMes.toFixed(2),
-          descricao: purchase.descricao, categoria: purchase.categoria, valorTotalDespesa: Number(p.valor),
-        });
+    // .filter (não .find): uma edição antiga já pode ter deixado mais de um registro pro
+    // mesmo mês (duplicata "zumbi") — sem isso, o find() sempre resolvia pro primeiro e o
+    // outro ficava parado pra sempre com o valor de antes da edição, nunca recalculado.
+    const doMes = restantes.filter(r => r.mes === p.mes);
+    if (doMes.length) {
+      for (const found of doMes) {
+        if (!['pago', 'parcial'].includes(found.status)) {
+          update('reimbursements', found.id, {
+            pessoaId: purchase.pessoaId, valorAReembolsar: +valorPorMes.toFixed(2),
+            descricao: purchase.descricao, categoria: purchase.categoria, valorTotalDespesa: Number(p.valor),
+          });
+        }
       }
+      // Sobrou mais de um registro não pago pro mesmo mês? Mantém só o mais antigo (agora
+      // com o valor certo) e remove os duplicados — nunca remove um já pago/parcial.
+      const naoPagos = doMes.filter(r => !['pago', 'parcial'].includes(r.status)).sort((a, b) => (Number(a._ts) || 0) - (Number(b._ts) || 0));
+      for (const dup of naoPagos.slice(1)) removeWhere('reimbursements', x => x.id === dup.id);
     } else {
       add('reimbursements', {
         purchaseId: purchase.id, mes: p.mes, pessoaId: purchase.pessoaId,

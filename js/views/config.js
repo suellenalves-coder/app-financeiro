@@ -4,7 +4,7 @@ import { db, save, add, update, remove, resetAll, NAV_SECTIONS, SEMPRE_VISIVEIS 
 import { card, table, formModal, confirmModal, rowActions, toast, badge, modal } from '../ui.js';
 import { generateInstallments } from './cartoes.js';
 import { addCard } from './cartoes.js';
-import { findDuplicateIncomeGroups } from '../calc.js';
+import { findDuplicateIncomeGroups, findReimbursementDiscrepancies } from '../calc.js';
 import * as sync from '../sync.js';
 
 export function render(el, rerender) {
@@ -190,8 +190,57 @@ export function render(el, rerender) {
       })(),
       h('button', { class: 'btn btn-ghost btn-sm', onclick: () => loadSample(rerender) }, '✨ Carregar dados de exemplo'),
       h('button', { class: 'btn btn-ghost btn-sm', onclick: () => checarReceitasDuplicadas(rerender) }, '🔍 Verificar receitas recorrentes duplicadas'),
+      h('button', { class: 'btn btn-ghost btn-sm', onclick: () => checarReembolsosDesatualizados(rerender) }, '🔍 Verificar reembolsos desatualizados'),
       h('button', { class: 'btn btn-danger btn-sm', onclick: () =>
         confirmModal('Apagar TODOS os dados e recomeçar do zero? Esta ação não pode ser desfeita.', () => { resetAll(); location.reload(); }) }, '🗑 Apagar tudo'))));
+}
+
+// Compras parceladas reembolsáveis já editadas (valor, parcelas ou percentual) podiam
+// deixar reembolsos de meses futuros com o valor de ANTES da edição — corrigido na origem
+// (syncReimbursementsForPurchase, em cartoes.js), mas registros que já ficaram errados
+// continuam errados até alguém mexer neles de novo. Esta verificação recalcula o valor
+// esperado (valor a reembolsar da compra ÷ nº de parcelas) e compara com o que está
+// gravado em cada mês, pra achar e corrigir o que sobrou desatualizado.
+function checarReembolsosDesatualizados(rerender) {
+  const divergencias = findReimbursementDiscrepancies();
+  if (!divergencias.length) { toast('Nenhum reembolso desatualizado encontrado.'); return; }
+
+  const corrigiveis = divergencias.filter(d => !d.bloqueadoPorPago);
+  const bloqueadas = divergencias.filter(d => d.bloqueadoPorPago);
+
+  const overlay = modal('Reembolsos desatualizados', h('div', {},
+    h('p', { class: 'stat-sub' },
+      `Encontramos ${divergencias.length} reembolso(s) de compras parceladas com o valor armazenado diferente do esperado (valor a reembolsar da compra ÷ número de parcelas) — geralmente porque a compra foi editada depois que os reembolsos futuros já tinham sido gerados.`),
+    table([
+      { label: 'Descrição', render: d => d.descricao },
+      { label: 'Pessoa', render: d => d.pessoa },
+      { label: 'Mês', render: d => ymLabel(d.mes) },
+      { label: 'Tipo', render: d => d.tipo === 'duplicata' ? `Duplicata (${d.registros.length}×)` : 'Valor' },
+      { label: 'Armazenado', render: d => d.valorArmazenado != null ? fmt(d.valorArmazenado) : d.registros.map(r => fmt(r.valorAReembolsar)).join(' + '), right: true },
+      { label: 'Correto', render: d => fmt(d.valorEsperado), right: true },
+      { label: 'Situação', render: d => d.bloqueadoPorPago
+          ? h('span', { class: 'badge badge-warn' }, 'Tem item pago — revisar')
+          : h('span', { class: 'badge badge-ok' }, 'Pendente — corrigível') },
+    ], divergencias, { responsive: true }),
+    bloqueadas.length ? h('p', { class: 'stat-sub', style: 'margin-top:8px' },
+      `${bloqueadas.length} desses envolvem um reembolso já "Pago" ou "Parcial" no mesmo mês — não mexi nesses. Reveja manualmente em Reembolsos antes de corrigir.`) : null,
+    h('div', { class: 'modal-actions' },
+      h('button', { class: 'btn btn-ghost', onclick: () => overlay.remove() }, 'Fechar'),
+      corrigiveis.length ? h('button', { class: 'btn btn-danger', onclick: () => {
+        for (const d of corrigiveis) {
+          if (d.tipo === 'duplicata') {
+            const naoPagos = d.registros.filter(r => !['pago', 'parcial'].includes(r.status)).sort((a, b) => (Number(a._ts) || 0) - (Number(b._ts) || 0));
+            const [manter, ...remover] = naoPagos;
+            if (manter) update('reimbursements', manter.id, { valorAReembolsar: d.valorEsperado });
+            for (const r of remover) remove('reimbursements', r.id);
+          } else {
+            update('reimbursements', d.registros[0].id, { valorAReembolsar: d.valorEsperado });
+          }
+        }
+        toast(`${corrigiveis.length} reembolso(s) corrigido(s).`);
+        overlay.remove();
+        rerender();
+      } }, `🛠 Corrigir ${corrigiveis.length} pendente(s)`) : null)), { wide: true });
 }
 
 // Um bug já corrigido fazia receitas recorrentes materializadas (ex.: ao marcar como

@@ -252,6 +252,18 @@ input, select, textarea { font: inherit; color: var(--ink); }
 .icon-btn:hover { background: var(--cinza-gelo); color: var(--ink); }
 .row-actions { display: flex; gap: 2px; justify-content: flex-end; }
 
+/* ---- Menu "⋮" de ações secundárias (rowActionsMenu) ---- */
+.action-menu {
+  position: fixed; z-index: 100; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: 0 10px 28px rgba(47, 52, 55, .18); padding: 5px; display: flex; flex-direction: column;
+}
+.action-menu[hidden] { display: none; }
+.action-menu-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: none; background: none;
+  border-radius: 8px; font-size: 13.5px; text-align: left; color: var(--ink); cursor: pointer; width: 100%;
+}
+.action-menu-item:hover { background: var(--cinza-gelo); }
+
 .fab {
   position: fixed; right: 22px; bottom: 84px; z-index: 30;
   width: 54px; height: 54px; border-radius: 50%; border: none;
@@ -1546,6 +1558,48 @@ function monthReimbursements(ym) {
   return db.reimbursements.filter(r => ymOf(r.data) === ym && ATIVAS(r.status));
 }
 
+// Varre todas as compras parceladas reembolsáveis e recalcula o valor esperado de cada
+// reembolso mensal (valorReembolsavel da compra ÷ número de parcelas), comparando com o
+// valor de fato gravado em cada ocorrência — pra achar reembolsos que ficaram desatualizados
+// depois de uma edição na compra (valor, parcelas ou percentual) sem serem recalculados
+// corretamente. Cada divergência indica se pode ser corrigida sozinha (nada pago/parcial
+// envolvido) ou se precisa de revisão manual (algum registro do mesmo mês já foi recebido).
+function findReimbursementDiscrepancies() {
+  const out = [];
+  for (const purchase of db.purchases) {
+    if (!purchase.reembolsavel || !purchase.pessoaId || !(Number(purchase.valorReembolsavel) > 0)) continue;
+    const installments = db.installments.filter(i => i.purchaseId === purchase.id);
+    if (!installments.length) continue;
+    const totalParcelas = installments.length;
+    const valorEsperado = +(Number(purchase.valorReembolsavel) / totalParcelas).toFixed(2);
+    const pessoa = db.people.find(p => p.id === purchase.pessoaId);
+
+    for (const inst of installments) {
+      const doMes = db.reimbursements.filter(r => r.purchaseId === purchase.id && r.mes === inst.mes);
+      if (!doMes.length) continue; // ensureReimbursementSync() cuida de criar o que falta
+      const temPago = doMes.some(r => ['pago', 'parcial'].includes(r.status));
+      if (doMes.length > 1) {
+        out.push({
+          tipo: 'duplicata', purchaseId: purchase.id, descricao: purchase.descricao,
+          pessoa: pessoa?.nome || '—', mes: inst.mes, registros: doMes,
+          valorArmazenado: null, valorEsperado, bloqueadoPorPago: temPago,
+        });
+        continue;
+      }
+      const r = doMes[0];
+      const armazenado = +(Number(r.valorAReembolsar) || 0).toFixed(2);
+      if (Math.abs(armazenado - valorEsperado) > 0.01) {
+        out.push({
+          tipo: 'valor', purchaseId: purchase.id, descricao: purchase.descricao,
+          pessoa: pessoa?.nome || '—', mes: inst.mes, registros: [r],
+          valorArmazenado: armazenado, valorEsperado, bloqueadoPorPago: ['pago', 'parcial'].includes(r.status),
+        });
+      }
+    }
+  }
+  return out.sort((a, b) => (a.mes || '').localeCompare(b.mes || ''));
+}
+
 // ---- Resumo mensal consolidado ----
 function monthSummary(ym) {
   const incomes = monthIncomes(ym);
@@ -1764,7 +1818,7 @@ function carFuelStats(meses) {
   };
 }
 
-return { monthIncomes, findDuplicateIncomeGroups, monthExpenses, expenseNet, recurringOccurrences, monthInstallments, installmentNet, futureInstallmentsTotal, cardInvoice, provisionMonthly, monthProvisions, monthProvisionDeposits, monthInvestPlanned, monthInvestDone, totalInvested, reserveTotal, monthInvestRedemptions, accountBalance, topCategoriesComparison, reimbPending, reimbMonth, reimbOutstanding, monthReimbursements, monthSummary, commitmentBreakdown, expensesByCategory, annualRows, alertsFor, simulatePurchase, carFuelStats };
+return { monthIncomes, findDuplicateIncomeGroups, monthExpenses, expenseNet, recurringOccurrences, monthInstallments, installmentNet, futureInstallmentsTotal, cardInvoice, provisionMonthly, monthProvisions, monthProvisionDeposits, monthInvestPlanned, monthInvestDone, totalInvested, reserveTotal, monthInvestRedemptions, accountBalance, topCategoriesComparison, reimbPending, reimbMonth, reimbOutstanding, monthReimbursements, findReimbursementDiscrepancies, monthSummary, commitmentBreakdown, expensesByCategory, annualRows, alertsFor, simulatePurchase, carFuelStats };
 })();
 
 __m['charts'] = (() => {
@@ -2262,7 +2316,48 @@ function rowActions(...btns) {
     h('button', { class: 'icon-btn', title: title || label, onclick: fn }, label)));
 }
 
-return { modal, formModal, confirmModal, table, searchableTable, badge, statCard, card, heroStat, section, alertBanner, toast, rowActions };
+// ---- Menu "⋮" de ações secundárias em linha de tabela ----
+// Pra linhas com muitas ações possíveis: os botões em `direct` ficam sempre visíveis (as
+// mais usadas, ex.: editar/excluir); os de `overflow` ficam atrás de um "⋮", reduzindo a
+// poluição visual. O menu é um único elemento reaproveitado e anexado ao <body> (não à
+// linha) — assim nunca é cortado pelo overflow-x:auto das tabelas com rolagem horizontal.
+let actionMenuEl = null;
+function actionMenuNode() {
+  if (!actionMenuEl) {
+    actionMenuEl = h('div', { class: 'action-menu' });
+    actionMenuEl.hidden = true;
+    document.body.append(actionMenuEl);
+    document.addEventListener('click', () => { actionMenuEl.hidden = true; });
+    window.addEventListener('scroll', () => { actionMenuEl.hidden = true; }, true);
+  }
+  return actionMenuEl;
+}
+function openActionMenu(anchorBtn, items) {
+  const menu = actionMenuNode();
+  menu.innerHTML = '';
+  menu.append(...items.map(([label, fn, title]) => h('button', {
+    class: 'action-menu-item',
+    onclick: e => { e.stopPropagation(); menu.hidden = true; fn(e); },
+  }, h('span', {}, label), h('span', {}, title || label))));
+  const rect = anchorBtn.getBoundingClientRect();
+  const menuWidth = 200;
+  menu.style.minWidth = `${menuWidth}px`;
+  menu.style.left = `${Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8))}px`;
+  menu.style.top = `${rect.bottom + 4}px`;
+  menu.hidden = false;
+}
+function rowActionsMenu(direct, overflow) {
+  const btns = direct.map(([label, fn, title]) => h('button', { class: 'icon-btn', title: title || label, onclick: fn }, label));
+  if (overflow?.length) {
+    btns.push(h('button', {
+      class: 'icon-btn', title: 'Mais ações',
+      onclick: e => { e.stopPropagation(); openActionMenu(e.currentTarget, overflow); },
+    }, '⋮'));
+  }
+  return h('div', { class: 'row-actions' }, btns);
+}
+
+return { modal, formModal, confirmModal, table, searchableTable, badge, statCard, card, heroStat, section, alertBanner, toast, rowActions, rowActionsMenu };
 })();
 
 __m['contas'] = (() => {
@@ -3068,7 +3163,8 @@ function syncReimbursementsForPurchase(purchase, installments) {
   for (const r of existing) {
     if (!r.mes && ['pendente', 'solicitado'].includes(r.status)) removeWhere('reimbursements', x => x.id === r.id);
   }
-  const restantes = existing.filter(r => r.mes || ['pago', 'parcial'].includes(r.status));
+  // Reconsulta depois da limpeza acima (existing pode ter itens já removidos).
+  const restantes = db.reimbursements.filter(r => r.purchaseId === purchase.id && (r.mes || ['pago', 'parcial'].includes(r.status)));
 
   const cardObj = db.cards.find(c => c.id === purchase.cartaoId);
   const totalParcelas = installments.length || 1;
@@ -3076,14 +3172,23 @@ function syncReimbursementsForPurchase(purchase, installments) {
   const mesesAtuais = new Set(installments.map(p => p.mes));
 
   for (const p of installments) {
-    const found = restantes.find(r => r.mes === p.mes);
-    if (found) {
-      if (!['pago', 'parcial'].includes(found.status)) {
-        update('reimbursements', found.id, {
-          pessoaId: purchase.pessoaId, valorAReembolsar: +valorPorMes.toFixed(2),
-          descricao: purchase.descricao, categoria: purchase.categoria, valorTotalDespesa: Number(p.valor),
-        });
+    // .filter (não .find): uma edição antiga já pode ter deixado mais de um registro pro
+    // mesmo mês (duplicata "zumbi") — sem isso, o find() sempre resolvia pro primeiro e o
+    // outro ficava parado pra sempre com o valor de antes da edição, nunca recalculado.
+    const doMes = restantes.filter(r => r.mes === p.mes);
+    if (doMes.length) {
+      for (const found of doMes) {
+        if (!['pago', 'parcial'].includes(found.status)) {
+          update('reimbursements', found.id, {
+            pessoaId: purchase.pessoaId, valorAReembolsar: +valorPorMes.toFixed(2),
+            descricao: purchase.descricao, categoria: purchase.categoria, valorTotalDespesa: Number(p.valor),
+          });
+        }
       }
+      // Sobrou mais de um registro não pago pro mesmo mês? Mantém só o mais antigo (agora
+      // com o valor certo) e remove os duplicados — nunca remove um já pago/parcial.
+      const naoPagos = doMes.filter(r => !['pago', 'parcial'].includes(r.status)).sort((a, b) => (Number(a._ts) || 0) - (Number(b._ts) || 0));
+      for (const dup of naoPagos.slice(1)) removeWhere('reimbursements', x => x.id === dup.id);
     } else {
       add('reimbursements', {
         purchaseId: purchase.id, mes: p.mes, pessoaId: purchase.pessoaId,
@@ -3976,7 +4081,7 @@ const { h, fmt, fmtDate, todayISO, sum, ymShort, ymLabel, ymAdd } = __m['utils']
 const { db, ui, add, update, remove, save, STATUS_REEMBOLSO, CRITERIOS_DIVISAO, FORMAS_PAGAMENTO } = __m['store'];
 const { reimbPending, reimbOutstanding, reimbMonth } = __m['calc'];
 const { ensureReimbursementSync } = __m['cartoes'];
-const { card, table, badge, formModal, confirmModal, modal, rowActions, statCard, heroStat, toast } = __m['ui'];
+const { card, table, badge, formModal, confirmModal, modal, rowActionsMenu, statCard, heroStat, toast } = __m['ui'];
 const { bars, CHART_COLORS } = __m['charts'];
 const sync = __m['sync'];
 
@@ -4113,6 +4218,7 @@ function render(el, rerender) {
   const porPessoa = db.people.map(p => {
     const items = ativos.filter(r => r.pessoaId === p.id);
     const itemsMes = items.filter(r => reimbMonth(r) === ym);
+    const pendentes = items.filter(r => ['pendente', 'solicitado', 'parcial', 'atrasado'].includes(r.status) && reimbPending(r) > 0);
     return {
       pessoa: p,
       doMes: sum(itemsMes, reimbPending),
@@ -4120,6 +4226,9 @@ function render(el, rerender) {
       pendente: sum(items.filter(r => ['pendente', 'atrasado'].includes(r.status)), reimbPending),
       solicitado: sum(items.filter(r => r.status === 'solicitado'), reimbPending),
       total: sum(items.filter(r => ['pendente', 'solicitado', 'parcial', 'atrasado'].includes(r.status)), reimbPending),
+      // Mês mais distante ainda em aberto — dá contexto de escala quando o total geral é
+      // muito maior que o devido neste mês (ex.: um parcelamento longo se estendendo).
+      ultimoMes: pendentes.map(reimbMonth).filter(Boolean).sort().pop() || '',
       ultimaSolicitacao: items.map(r => r.dataSolicitacao).filter(Boolean).sort().pop() || '',
       count: items.length,
     };
@@ -4137,7 +4246,15 @@ function render(el, rerender) {
           href: '#', onclick: e => { e.preventDefault(); filtro.pessoaId = x.pessoa.id; rerender(); },
         }, h('b', {}, x.pessoa.nome)) },
       { label: `Deve em ${ymShort(ym)}`, render: x => h('b', {}, fmt(x.doMes)), right: true },
-      { label: 'Total pendente (todos os meses)', render: x => fmt(x.total), right: true },
+      { label: 'Total pendente (todos os meses)', render: x => {
+          // Total bem maior que o devido neste mês, sem contexto, é fácil de estranhar —
+          // um aviso com até quando isso se estende ajuda a entender a escala.
+          const desproporcional = x.ultimoMes && (x.doMes === 0 ? x.total > 0 : x.total / x.doMes > 3);
+          return h('span', {},
+            fmt(x.total),
+            desproporcional ? h('span', { class: 'stat-sub', style: 'display:block;white-space:nowrap' },
+              `⚠️ até ${ymShort(x.ultimoMes)}`) : null);
+        }, right: true },
       { label: 'Última solicitação', render: x => x.ultimaSolicitacao ? fmtDate(x.ultimaSolicitacao) : '—' },
       { label: '', render: x => h('div', { style: 'display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap' },
           h('button', { class: 'btn btn-ghost btn-sm', onclick: () => shareLinkModal(x.pessoa) }, '🔗 Link'),
@@ -4176,7 +4293,10 @@ function renderTabelaUnificada(ativos, rerender) {
       sel('status', STATUS_REEMBOLSO, 'Todos os status'),
       sel('mes', mesesDisponiveis.map(m => [m, ymLabel(m)]), 'Todos os meses'),
       temFiltro ? h('button', { class: 'btn btn-ghost btn-sm', onclick: () => { filtro.pessoaId = ''; filtro.status = ''; filtro.mes = ''; rerender(); } }, '✕ Limpar filtros') : null),
-    pessoaAtiva ? h('p', { class: 'stat-sub' }, `Filtrando por ${pessoaAtiva.nome} · ${list.length} item(ns) · pendente: ${fmt(sum(list, reimbPending))}`) : null,
+    pessoaAtiva ? h('div', { style: 'margin-bottom:14px' },
+      statCard(`Pendente de ${pessoaAtiva.nome}`, sum(list, reimbPending), {
+        tone: 'tone-warn', sub: `${list.length} item(ns) neste filtro`,
+      })) : null,
     table([
       { label: 'Tipo', render: r => h('span', { class: `badge ${r.purchaseId ? 'badge-info' : 'badge-muted'}` }, r.purchaseId ? 'Parcelado' : 'Avulso') },
       { label: 'Mês', render: r => h(reimbMonth(r) === ui.month ? 'b' : 'span', {}, ymShort(reimbMonth(r))) },
@@ -4191,19 +4311,23 @@ function renderTabelaUnificada(ativos, rerender) {
     ], list, { empty: ativos.length ? 'Nada encontrado para esse filtro.' : 'Nenhum reembolso registrado.', responsive: true }));
 }
 
+// Editar e excluir ficam sempre visíveis (as ações mais usadas); o resto — ver
+// parcelamento, marcar como solicitado, registrar recebimento — vai atrás do menu "⋮",
+// pra não poluir a linha com muitos ícones de uma vez.
 function actions(r, rerender) {
-  const btns = [];
-  if (r.purchaseId) btns.push(['📋', () => detalhamentoModal(r.purchaseId, rerender), 'Ver parcelamento completo']);
+  const overflow = [];
+  if (r.purchaseId) overflow.push(['📋', () => detalhamentoModal(r.purchaseId, rerender), 'Ver parcelamento completo']);
   if (['pendente', 'atrasado'].includes(r.status)) {
-    btns.push(['📨', () => { update('reimbursements', r.id, { status: 'solicitado', dataSolicitacao: todayISO() }); toast('Marcado como solicitado.'); rerender(); }, 'Marcar como solicitado']);
+    overflow.push(['📨', () => { update('reimbursements', r.id, { status: 'solicitado', dataSolicitacao: todayISO() }); toast('Marcado como solicitado.'); rerender(); }, 'Marcar como solicitado']);
   }
   if (reimbPending(r) > 0 && !['cancelado', 'contestado'].includes(r.status)) {
-    btns.push(['💵', () => receberModal(r, rerender), 'Registrar recebimento']);
+    overflow.push(['💵', () => receberModal(r, rerender), 'Registrar recebimento']);
   }
-  btns.push(
+  const direct = [
     ['✏️', () => formModal('Editar reembolso', fields(), r, vals => { update('reimbursements', r.id, vals); rerender(); }, { wide: true }), 'Editar'],
-    ['🗑', () => confirmModal(`Excluir o reembolso "${r.descricao}"?`, () => { remove('reimbursements', r.id); rerender(); }), 'Excluir']);
-  return rowActions(...btns);
+    ['🗑', () => confirmModal(`Excluir o reembolso "${r.descricao}"?`, () => { remove('reimbursements', r.id); rerender(); }), 'Excluir'],
+  ];
+  return rowActionsMenu(direct, overflow);
 }
 
 function receberModal(r, rerender) {
@@ -5082,7 +5206,7 @@ const { db, save, add, update, remove, resetAll, NAV_SECTIONS, SEMPRE_VISIVEIS }
 const { card, table, formModal, confirmModal, rowActions, toast, badge, modal } = __m['ui'];
 const { generateInstallments } = __m['cartoes'];
 const { addCard } = __m['cartoes'];
-const { findDuplicateIncomeGroups } = __m['calc'];
+const { findDuplicateIncomeGroups, findReimbursementDiscrepancies } = __m['calc'];
 const sync = __m['sync'];
 
 function render(el, rerender) {
@@ -5268,8 +5392,57 @@ function render(el, rerender) {
       })(),
       h('button', { class: 'btn btn-ghost btn-sm', onclick: () => loadSample(rerender) }, '✨ Carregar dados de exemplo'),
       h('button', { class: 'btn btn-ghost btn-sm', onclick: () => checarReceitasDuplicadas(rerender) }, '🔍 Verificar receitas recorrentes duplicadas'),
+      h('button', { class: 'btn btn-ghost btn-sm', onclick: () => checarReembolsosDesatualizados(rerender) }, '🔍 Verificar reembolsos desatualizados'),
       h('button', { class: 'btn btn-danger btn-sm', onclick: () =>
         confirmModal('Apagar TODOS os dados e recomeçar do zero? Esta ação não pode ser desfeita.', () => { resetAll(); location.reload(); }) }, '🗑 Apagar tudo'))));
+}
+
+// Compras parceladas reembolsáveis já editadas (valor, parcelas ou percentual) podiam
+// deixar reembolsos de meses futuros com o valor de ANTES da edição — corrigido na origem
+// (syncReimbursementsForPurchase, em cartoes.js), mas registros que já ficaram errados
+// continuam errados até alguém mexer neles de novo. Esta verificação recalcula o valor
+// esperado (valor a reembolsar da compra ÷ nº de parcelas) e compara com o que está
+// gravado em cada mês, pra achar e corrigir o que sobrou desatualizado.
+function checarReembolsosDesatualizados(rerender) {
+  const divergencias = findReimbursementDiscrepancies();
+  if (!divergencias.length) { toast('Nenhum reembolso desatualizado encontrado.'); return; }
+
+  const corrigiveis = divergencias.filter(d => !d.bloqueadoPorPago);
+  const bloqueadas = divergencias.filter(d => d.bloqueadoPorPago);
+
+  const overlay = modal('Reembolsos desatualizados', h('div', {},
+    h('p', { class: 'stat-sub' },
+      `Encontramos ${divergencias.length} reembolso(s) de compras parceladas com o valor armazenado diferente do esperado (valor a reembolsar da compra ÷ número de parcelas) — geralmente porque a compra foi editada depois que os reembolsos futuros já tinham sido gerados.`),
+    table([
+      { label: 'Descrição', render: d => d.descricao },
+      { label: 'Pessoa', render: d => d.pessoa },
+      { label: 'Mês', render: d => ymLabel(d.mes) },
+      { label: 'Tipo', render: d => d.tipo === 'duplicata' ? `Duplicata (${d.registros.length}×)` : 'Valor' },
+      { label: 'Armazenado', render: d => d.valorArmazenado != null ? fmt(d.valorArmazenado) : d.registros.map(r => fmt(r.valorAReembolsar)).join(' + '), right: true },
+      { label: 'Correto', render: d => fmt(d.valorEsperado), right: true },
+      { label: 'Situação', render: d => d.bloqueadoPorPago
+          ? h('span', { class: 'badge badge-warn' }, 'Tem item pago — revisar')
+          : h('span', { class: 'badge badge-ok' }, 'Pendente — corrigível') },
+    ], divergencias, { responsive: true }),
+    bloqueadas.length ? h('p', { class: 'stat-sub', style: 'margin-top:8px' },
+      `${bloqueadas.length} desses envolvem um reembolso já "Pago" ou "Parcial" no mesmo mês — não mexi nesses. Reveja manualmente em Reembolsos antes de corrigir.`) : null,
+    h('div', { class: 'modal-actions' },
+      h('button', { class: 'btn btn-ghost', onclick: () => overlay.remove() }, 'Fechar'),
+      corrigiveis.length ? h('button', { class: 'btn btn-danger', onclick: () => {
+        for (const d of corrigiveis) {
+          if (d.tipo === 'duplicata') {
+            const naoPagos = d.registros.filter(r => !['pago', 'parcial'].includes(r.status)).sort((a, b) => (Number(a._ts) || 0) - (Number(b._ts) || 0));
+            const [manter, ...remover] = naoPagos;
+            if (manter) update('reimbursements', manter.id, { valorAReembolsar: d.valorEsperado });
+            for (const r of remover) remove('reimbursements', r.id);
+          } else {
+            update('reimbursements', d.registros[0].id, { valorAReembolsar: d.valorEsperado });
+          }
+        }
+        toast(`${corrigiveis.length} reembolso(s) corrigido(s).`);
+        overlay.remove();
+        rerender();
+      } }, `🛠 Corrigir ${corrigiveis.length} pendente(s)`) : null)), { wide: true });
 }
 
 // Um bug já corrigido fazia receitas recorrentes materializadas (ex.: ao marcar como

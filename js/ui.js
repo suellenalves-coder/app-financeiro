@@ -275,3 +275,44 @@ export function rowActions(...btns) {
   return h('div', { class: 'row-actions' }, btns.map(([label, fn, title]) =>
     h('button', { class: 'icon-btn', title: title || label, onclick: fn }, label)));
 }
+
+// ---- Menu "⋮" de ações secundárias em linha de tabela ----
+// Pra linhas com muitas ações possíveis: os botões em `direct` ficam sempre visíveis (as
+// mais usadas, ex.: editar/excluir); os de `overflow` ficam atrás de um "⋮", reduzindo a
+// poluição visual. O menu é um único elemento reaproveitado e anexado ao <body> (não à
+// linha) — assim nunca é cortado pelo overflow-x:auto das tabelas com rolagem horizontal.
+let actionMenuEl = null;
+function actionMenuNode() {
+  if (!actionMenuEl) {
+    actionMenuEl = h('div', { class: 'action-menu' });
+    actionMenuEl.hidden = true;
+    document.body.append(actionMenuEl);
+    document.addEventListener('click', () => { actionMenuEl.hidden = true; });
+    window.addEventListener('scroll', () => { actionMenuEl.hidden = true; }, true);
+  }
+  return actionMenuEl;
+}
+function openActionMenu(anchorBtn, items) {
+  const menu = actionMenuNode();
+  menu.innerHTML = '';
+  menu.append(...items.map(([label, fn, title]) => h('button', {
+    class: 'action-menu-item',
+    onclick: e => { e.stopPropagation(); menu.hidden = true; fn(e); },
+  }, h('span', {}, label), h('span', {}, title || label))));
+  const rect = anchorBtn.getBoundingClientRect();
+  const menuWidth = 200;
+  menu.style.minWidth = `${menuWidth}px`;
+  menu.style.left = `${Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8))}px`;
+  menu.style.top = `${rect.bottom + 4}px`;
+  menu.hidden = false;
+}
+export function rowActionsMenu(direct, overflow) {
+  const btns = direct.map(([label, fn, title]) => h('button', { class: 'icon-btn', title: title || label, onclick: fn }, label));
+  if (overflow?.length) {
+    btns.push(h('button', {
+      class: 'icon-btn', title: 'Mais ações',
+      onclick: e => { e.stopPropagation(); openActionMenu(e.currentTarget, overflow); },
+    }, '⋮'));
+  }
+  return h('div', { class: 'row-actions' }, btns);
+}

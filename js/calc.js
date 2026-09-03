@@ -226,6 +226,48 @@ export function monthReimbursements(ym) {
   return db.reimbursements.filter(r => ymOf(r.data) === ym && ATIVAS(r.status));
 }
 
+// Varre todas as compras parceladas reembolsáveis e recalcula o valor esperado de cada
+// reembolso mensal (valorReembolsavel da compra ÷ número de parcelas), comparando com o
+// valor de fato gravado em cada ocorrência — pra achar reembolsos que ficaram desatualizados
+// depois de uma edição na compra (valor, parcelas ou percentual) sem serem recalculados
+// corretamente. Cada divergência indica se pode ser corrigida sozinha (nada pago/parcial
+// envolvido) ou se precisa de revisão manual (algum registro do mesmo mês já foi recebido).
+export function findReimbursementDiscrepancies() {
+  const out = [];
+  for (const purchase of db.purchases) {
+    if (!purchase.reembolsavel || !purchase.pessoaId || !(Number(purchase.valorReembolsavel) > 0)) continue;
+    const installments = db.installments.filter(i => i.purchaseId === purchase.id);
+    if (!installments.length) continue;
+    const totalParcelas = installments.length;
+    const valorEsperado = +(Number(purchase.valorReembolsavel) / totalParcelas).toFixed(2);
+    const pessoa = db.people.find(p => p.id === purchase.pessoaId);
+
+    for (const inst of installments) {
+      const doMes = db.reimbursements.filter(r => r.purchaseId === purchase.id && r.mes === inst.mes);
+      if (!doMes.length) continue; // ensureReimbursementSync() cuida de criar o que falta
+      const temPago = doMes.some(r => ['pago', 'parcial'].includes(r.status));
+      if (doMes.length > 1) {
+        out.push({
+          tipo: 'duplicata', purchaseId: purchase.id, descricao: purchase.descricao,
+          pessoa: pessoa?.nome || '—', mes: inst.mes, registros: doMes,
+          valorArmazenado: null, valorEsperado, bloqueadoPorPago: temPago,
+        });
+        continue;
+      }
+      const r = doMes[0];
+      const armazenado = +(Number(r.valorAReembolsar) || 0).toFixed(2);
+      if (Math.abs(armazenado - valorEsperado) > 0.01) {
+        out.push({
+          tipo: 'valor', purchaseId: purchase.id, descricao: purchase.descricao,
+          pessoa: pessoa?.nome || '—', mes: inst.mes, registros: [r],
+          valorArmazenado: armazenado, valorEsperado, bloqueadoPorPago: ['pago', 'parcial'].includes(r.status),
+        });
+      }
+    }
+  }
+  return out.sort((a, b) => (a.mes || '').localeCompare(b.mes || ''));
+}
+
 // ---- Resumo mensal consolidado ----
 export function monthSummary(ym) {
   const incomes = monthIncomes(ym);
